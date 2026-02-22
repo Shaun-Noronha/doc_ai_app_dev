@@ -1,7 +1,9 @@
-FROM postgis/postgis:18-3.6
+FROM python:3.12
 
-ENV POSTGRES_USER=postgres
-ENV POSTGRES_PASSWORD=postgres
-ENV POSTGRES_DB=mydb
+WORKDIR /app
+COPY . .
 
-EXPOSE 5432
+RUN pip install -r requirements.txt
+
+# Tell gunicorn to bind to $PORT (Render requires this)
+CMD ["gunicorn", "backend.wsgi:application", "--bind", "0.0.0.0:$PORT"]
