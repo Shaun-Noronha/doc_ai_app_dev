@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any
 
 import psycopg2
-from psycopg2.extras import Json
+from psycopg2.extras import RealDictCursor, Json
 
 
 def get_connection(database_url: str):
@@ -65,6 +65,17 @@ def apply_schema(database_url: str, schema_path: Path | None = None) -> tuple[bo
 # Transport mode values accepted by parsed_shipping CHECK constraint.
 _VALID_TRANSPORT_MODES = {"truck", "ship", "air", "rail"}
 
+# parsed_water.unit CHECK allows only 'gallon' | 'm3'
+_WATER_UNIT_MAP = {"gallon": "gallon", "gal": "gallon", "gallons": "gallon", "m3": "m3", "m³": "m3", "cubic meter": "m3", "cubic meters": "m3", "ccf": "gallon"}
+
+
+def _normalise_water_unit(raw: str | None) -> str | None:
+    """Return a CHECK-valid parsed_water unit ('gallon' or 'm3'), or None."""
+    if not isinstance(raw, str):
+        return None
+    key = raw.strip().lower()
+    return _WATER_UNIT_MAP.get(key)
+
 
 def _normalise_transport_mode(raw: str | None) -> str | None:
     """Return a CHECK-valid transport mode, or None if the value cannot be mapped."""
@@ -76,6 +87,39 @@ def _normalise_transport_mode(raw: str | None) -> str | None:
     return None
 
 
+def resolve_utility_subtype(payload: dict[str, Any]) -> str | None:
+    """
+    Resolve a utility_bill payload to subtype electricity, gas, or water.
+
+    Returns the subtype when doc_type is utility_bill and extraction has
+    utility_type in (electricity, gas, water), or when inferrable from usage
+    fields in order: water (volume > 0), gas (therms > 0), electricity (kwh >= 0).
+    Returns None otherwise.
+    """
+    if (payload.get("doc_type") or "").strip().lower() != "utility_bill":
+        return None
+    extraction = payload.get("extraction") or {}
+    utility_type_raw = extraction.get("utility_type")
+    utility_type = (
+        (utility_type_raw or "").strip().lower()
+        if isinstance(utility_type_raw, str)
+        else ""
+    )
+    if utility_type in ("electricity", "gas", "water"):
+        return utility_type
+    # Infer in order: water → gas → electricity; water/gas require > 0
+    water_volume = extraction.get("water_volume")
+    if water_volume is not None and water_volume > 0:
+        return "water"
+    therms = extraction.get("natural_gas_therms")
+    if therms is not None and therms > 0:
+        return "gas"
+    kwh = extraction.get("electricity_kwh")
+    if kwh is not None and kwh >= 0:
+        return "electricity"
+    return None
+
+
 def insert_document(conn, payload: dict[str, Any]) -> int:
     """
     Insert one row into documents. Return the inserted document_id.
@@ -83,6 +127,11 @@ def insert_document(conn, payload: dict[str, Any]) -> int:
     Uses payload["doc_type"], payload["source_file"], and the full payload as JSONB.
     source_filename is stored as NULL when not present (column is nullable per schema).
     """
+    document_type = payload.get("doc_type") or "unknown"
+    if document_type == "utility_bill":
+        resolved = resolve_utility_subtype(payload)
+        if resolved is not None:
+            document_type = resolved
     with conn.cursor() as cur:
         cur.execute(
             """
@@ -91,7 +140,7 @@ def insert_document(conn, payload: dict[str, Any]) -> int:
             RETURNING document_id
             """,
             (
-                payload.get("doc_type") or "unknown",
+                document_type,
                 payload.get("source_file") or None,
                 Json(payload),
             ),
@@ -100,7 +149,7 @@ def insert_document(conn, payload: dict[str, Any]) -> int:
         return row[0] if row else 0
 
 
-def insert_category(conn, document_id: int, payload: dict[str, Any]) -> None:
+def insert_category(conn, document_id: int, payload: dict[str, Any]) -> bool:
     """
     Insert one row into the appropriate parsed_* table based on doc_type and extraction.
 
@@ -109,22 +158,26 @@ def insert_category(conn, document_id: int, payload: dict[str, Any]) -> None:
     based on utility_type when doc_type is utility_bill.
     Inserts into parsed_shipping for delivery_receipt or when logistics fields are present.
 
+    Returns True if a parsed_* row was inserted, False otherwise (e.g. invoice/receipt
+    have no parsed table; failed extraction; utility_bill with no usage data).
+
     NOT NULL columns that may be absent in extraction are COALESCE'd to 0 so the
     CHECK (>= 0) constraint is always satisfied.  The caller (pipeline) still stores
     the full extraction payload in documents.exported_json for later correction.
     """
     extraction = payload.get("extraction") or {}
     if extraction.get("error") == "json_parse_failed":
-        return
+        return False
 
     doc_type = (payload.get("doc_type") or "").strip().lower()
-    utility_type = (
-        extraction.get("utility_type") or ""
-    ).strip().lower() if isinstance(extraction.get("utility_type"), str) else ""
 
     with conn.cursor() as cur:
         # Utility bill → parsed_electricity | parsed_stationary_fuel | parsed_water
         if doc_type == "utility_bill":
+            utility_type = resolve_utility_subtype(payload) or ""
+            if not utility_type:
+                return False  # no resolvable subtype
+
             if utility_type == "electricity":
                 kwh = extraction.get("electricity_kwh")
                 cur.execute(
@@ -142,7 +195,7 @@ def insert_category(conn, document_id: int, payload: dict[str, Any]) -> None:
                         extraction.get("billing_period_end"),
                     ),
                 )
-                return
+                return True
 
             if utility_type == "gas":
                 quantity = extraction.get("natural_gas_therms")
@@ -161,10 +214,11 @@ def insert_category(conn, document_id: int, payload: dict[str, Any]) -> None:
                         extraction.get("billing_period_end"),
                     ),
                 )
-                return
+                return True
 
             if utility_type == "water":
                 water_volume = extraction.get("water_volume")
+                water_unit = _normalise_water_unit(extraction.get("water_unit"))
                 cur.execute(
                     """
                     INSERT INTO parsed_water
@@ -174,20 +228,21 @@ def insert_category(conn, document_id: int, payload: dict[str, Any]) -> None:
                     (
                         document_id,
                         water_volume if water_volume is not None and water_volume >= 0 else 0,
-                        extraction.get("water_unit"),
+                        water_unit if water_unit is not None else "gallon",
                         extraction.get("location"),
                         extraction.get("billing_period_start"),
                         extraction.get("billing_period_end"),
                     ),
                 )
-                return
+                return True
 
-            # "other" or unknown utility_type: no category row
-            return
+            return False
 
-        # Shipping: delivery_receipt or extraction with logistics fields
+        # Shipping: delivery_receipt, invoice, receipt, or extraction with logistics fields
         has_logistics = (
             doc_type == "delivery_receipt"
+            or doc_type == "invoice"
+            or doc_type == "receipt"
             or extraction.get("mode") is not None
             or extraction.get("weight_kg") is not None
             or extraction.get("distance_km") is not None
@@ -199,6 +254,8 @@ def insert_category(conn, document_id: int, payload: dict[str, Any]) -> None:
             distance_miles = (
                 (float(distance_km) * 0.621371) if distance_km is not None else 0.0
             )
+            # For invoice/receipt use invoice_date as period_start when present
+            period_start = extraction.get("date") or extraction.get("invoice_date")
             cur.execute(
                 """
                 INSERT INTO parsed_shipping
@@ -210,7 +267,92 @@ def insert_category(conn, document_id: int, payload: dict[str, Any]) -> None:
                     weight_tons,
                     distance_miles,
                     _normalise_transport_mode(extraction.get("mode")),
-                    extraction.get("date"),
+                    period_start,
                     None,
                 ),
             )
+            return True
+
+    return False
+
+
+def fetch_documents(
+    database_url: str,
+    limit: int = 100,
+    document_type: str | None = None,
+) -> list[dict[str, Any]]:
+    """
+    Fetch documents from the database as a list of dicts.
+
+    Parameters
+    ----------
+    database_url : str
+        PostgreSQL connection string.
+    limit : int
+        Maximum number of rows to return (default 100).
+    document_type : str, optional
+        If set, filter by document_type (e.g. 'utility_bill', 'invoice').
+
+    Returns
+    -------
+    list[dict]
+        Each dict has keys: document_id, document_type, source_filename, created_at.
+    """
+    conn = get_connection(database_url)
+    try:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            sql = """
+                SELECT document_id, document_type, source_filename, created_at
+                FROM documents
+                ORDER BY document_id DESC
+                LIMIT %s
+            """
+            params: list[Any] = [limit]
+            if document_type:
+                sql = """
+                    SELECT document_id, document_type, source_filename, created_at
+                    FROM documents
+                    WHERE document_type = %s
+                    ORDER BY document_id DESC
+                    LIMIT %s
+                """
+                params = [document_type, limit]
+            cur.execute(sql, params)
+            return [dict(row) for row in cur.fetchall()]
+    finally:
+        conn.close()
+
+
+def fetch_table_counts(database_url: str) -> dict[str, int]:
+    """
+    Return row counts for documents and each parsed_* / activities table.
+
+    Returns
+    -------
+    dict[str, int]
+        Table name -> count.
+    """
+    tables = [
+        "documents",
+        "parsed_electricity",
+        "parsed_stationary_fuel",
+        "parsed_vehicle_fuel",
+        "parsed_shipping",
+        "parsed_waste",
+        "parsed_water",
+        "activities",
+        "emissions",
+    ]
+    conn = get_connection(database_url)
+    try:
+        with conn.cursor() as cur:
+            counts: dict[str, int] = {}
+            for table in tables:
+                try:
+                    cur.execute(f"SELECT COUNT(*) FROM {table}")
+                    counts[table] = cur.fetchone()[0]
+                except Exception:
+                    counts[table] = -1
+            return counts
+    finally:
+        conn.close()

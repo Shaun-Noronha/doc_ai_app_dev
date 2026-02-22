@@ -126,6 +126,12 @@ def process_pdf(
         mime_type=mime_type,
     )
 
+    target_processor = processor_name or config.docai_form_processor_name
+
+    # OcrConfig (e.g. enable_native_pdf_parsing) is only supported by Form/Document processors.
+    # Invoice Processor and others return 400 if OcrConfig is set.
+    use_form_processor = target_processor == config.docai_form_processor_name
+
     process_options: documentai.ProcessOptions | None = None
     # Only apply page limits for PDFs (images are single-page)
     if mime_type == PDF_MIME_TYPE and max_pages is not None and max_pages > 0:
@@ -134,10 +140,10 @@ def process_pdf(
                 pages=list(range(1, max_pages + 1))
             )
         )
-    else:
-        process_options = documentai.ProcessOptions(ocr_config=documentai.OcrConfig(enable_native_pdf_parsing=True))
-
-    target_processor = processor_name or config.docai_form_processor_name
+    elif use_form_processor:
+        process_options = documentai.ProcessOptions(
+            ocr_config=documentai.OcrConfig(enable_native_pdf_parsing=True)
+        )
 
     request_kwargs: dict = {
         "name": target_processor,

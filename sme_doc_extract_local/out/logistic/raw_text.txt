@@ -1,90 +1,73 @@
-Commercial Invoice
 ShipWorks
-Order: 4684
-Date: 5/6/2019
+Commercial Invoice
 Ship From
-ShipTo
-Brent Heath
-3 Rd Street
 ShipWorks
 One Memorial Drive
 Suite 2000
 St. Louis, Missouri 63102
 800-952-7784
 www.shipworks.com
+ShipTo
+Brent Heath
+3 Rd Street
 Aubagne, INSEE 13400
 France
 603-555-1366
 brent.heath@shipworks.com
+Order: 4684
+Date: 5/6/2019
 Importer Other Than Recipient
-Shipment Information
 Name:
+Address:
+City/State/Zip:
+Phone:
+Shipment Information
 CIF
 FOB
 C&F
-Address:
-City/State/Zip:
 Country of Export: United States
 Country of Destination: France
 Currency: US Dollar
 Package Count: 1
 Total Weight: 5.38 lbs.
-Phone:
 Quantity
 Unit of
 Measure
 Unit
-Value
 Commodity Description
-Weight
-Total Value
+Value
 2
 Pounds
 23.03
-0.29
-46.06
 Orange Hat
 Country of Origin: United States
 2
 Pounds
 31.99
-0.96
-63.98
 Green Hat
+0.96
+Weight
+Total Value
+0.29
+46.06
+63.98
 Country of Origin: United States
 2
-N
 Pounds
 31.99
+Green Hat
 0.96
 63.98
-Green Hat
 Country of Origin: United States
 1
 Pounds
 31.99
+Green Hat
 0.96
 31.99
-Green Hat
 Country of Origin: United States
+Signature of shipper/exporter (print name and title and sign)
+Date
+I declare all the information contained in this invoice to be true and correct
 Total:
 206.01
-Date
-Signature of shipper/exporter (print name and title and sign)
-I declare all the information contained in this invoice to be true and correct
-
-
-[TABLES]
-
---- Table 1 ---
-Quantity	Unit of Measure	Unit Value	Commodity Description	Weight	Total
-2	Pounds	23.03	Orange Hat Country of Origin: United States	0.29	
-2	Pounds	31.99	Green Hat Country of Origin: United States	0.96	
-2 N	Pounds	31.99	Green Hat Country of Origin: United States	0.96	
-1	Pounds	31.99	Green Hat Country of Origin: United States	0.96	
---- Table 2 ---
-Order:	4684
-Date:	5/6/2019
---- Table 3 ---
-Name:
-Address: City/State/Zip: Phone:

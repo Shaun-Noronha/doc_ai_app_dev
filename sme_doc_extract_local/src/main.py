@@ -39,7 +39,15 @@ from rich.table import Table
 from src.classify import classify_doc_with_scores
 from src.config import get_config
 import src.config  # noqa: F401 – load .env for ingest
-from src.db import apply_schema, get_connection, insert_category, insert_document, test_connection
+from src.db import (
+    apply_schema,
+    fetch_documents,
+    fetch_table_counts,
+    get_connection,
+    insert_category,
+    insert_document,
+    test_connection,
+)
 from src.constants import (
     DOC_TYPE_DELIVERY_RECEIPT,
     DOC_TYPE_INVOICE,
@@ -472,6 +480,7 @@ def cmd_ingest(args: argparse.Namespace) -> int:
     )
 
     inserted = 0
+    with_category = 0
     failed = 0
     conn = get_connection(database_url)
     try:
@@ -479,11 +488,16 @@ def cmd_ingest(args: argparse.Namespace) -> int:
             try:
                 payload = json.loads(path.read_text(encoding="utf-8"))
                 doc_id = insert_document(conn, payload)
-                insert_category(conn, doc_id, payload)
+                had_category = insert_category(conn, doc_id, payload)
                 conn.commit()
                 inserted += 1
+                if had_category:
+                    with_category += 1
                 if args.verbose:
-                    console.print(f"  [green]✓[/] {path.relative_to(outdir)} → document id {doc_id}")
+                    detail = "document + parsed_*" if had_category else "document only"
+                    console.print(
+                        f"  [green]✓[/] {path.relative_to(outdir)} → document_id {doc_id} ({detail})"
+                    )
             except Exception as exc:  # noqa: BLE001
                 conn.rollback()
                 failed += 1
@@ -494,8 +508,14 @@ def cmd_ingest(args: argparse.Namespace) -> int:
         conn.close()
 
     console.print(
-        f"[bold]Done.[/] Inserted: [green]{inserted}[/], failed: [red]{failed}[/]"
+        f"[bold]Done.[/] Inserted: [green]{inserted}[/] documents "
+        f"([cyan]{with_category}[/] with parsed_* row), failed: [red]{failed}[/]"
     )
+    if inserted > 0 and with_category < inserted - failed:
+        console.print(
+            "[dim]Note: Only utility_bill (electricity/gas/water) and delivery_receipt/shipping "
+            "get a parsed_* row. Invoices/receipts and failed extractions are stored in documents only.[/]"
+        )
     return 0 if failed == 0 else 1
 
 
@@ -513,6 +533,45 @@ def cmd_test_db(_args: argparse.Namespace) -> int:
         return 0
     console.print(f"[red]PostgreSQL connection failed:[/] {err}")
     return 1
+
+
+def cmd_fetch_db(args: argparse.Namespace) -> int:
+    """Handle: python -m src.main fetch-db. Query and print data from the database."""
+    database_url = os.environ.get("DATABASE_URL")
+    if not database_url:
+        console.print(
+            "[red]Error:[/] DATABASE_URL is not set. Set it in .env or the environment."
+        )
+        return 1
+
+    # Table counts
+    counts = fetch_table_counts(database_url)
+    table = Table(title="Table row counts")
+    table.add_column("Table", style="cyan")
+    table.add_column("Count", justify="right", style="green")
+    for name, count in counts.items():
+        table.add_row(name, str(count) if count >= 0 else "(error)")
+    console.print(table)
+    console.print()
+
+    # Recent documents
+    limit = getattr(args, "limit", 50)
+    doc_type_filter = getattr(args, "document_type", None)
+    rows = fetch_documents(database_url, limit=limit, document_type=doc_type_filter)
+    doc_table = Table(title=f"Documents (most recent, limit={limit})")
+    doc_table.add_column("document_id", justify="right", style="dim")
+    doc_table.add_column("document_type", style="cyan")
+    doc_table.add_column("source_filename", style="white")
+    doc_table.add_column("created_at", style="dim")
+    for r in rows:
+        doc_table.add_row(
+            str(r["document_id"]),
+            r["document_type"] or "",
+            (r["source_filename"] or "")[:60],
+            str(r["created_at"]) if r.get("created_at") else "",
+        )
+    console.print(doc_table)
+    return 0
 
 
 def cmd_init_db(_args: argparse.Namespace) -> int:
@@ -649,6 +708,24 @@ def build_parser() -> argparse.ArgumentParser:
         help="Apply schema (documents + category tables) to the database. Requires DATABASE_URL.",
     )
 
+    # ── fetch-db (query and print data from PostgreSQL) ───────────
+    p_fetch = sub.add_parser(
+        "fetch-db",
+        help="Fetch and print documents and table counts from the database (requires DATABASE_URL).",
+    )
+    p_fetch.add_argument(
+        "--limit",
+        type=int,
+        default=50,
+        help="Max number of documents to list (default 50)",
+    )
+    p_fetch.add_argument(
+        "--document-type",
+        dest="document_type",
+        default=None,
+        help="Filter documents by document_type (e.g. utility_bill, invoice)",
+    )
+
     return root
 
 
@@ -667,6 +744,7 @@ def main() -> None:
         "ingest": cmd_ingest,
         "test-db": cmd_test_db,
         "init-db": cmd_init_db,
+        "fetch-db": cmd_fetch_db,
     }
     handler = dispatch.get(args.command)
     if handler is None:
