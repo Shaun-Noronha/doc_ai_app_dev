@@ -40,7 +40,6 @@ export default function RecommendationCard({ rec }: Props) {
         background: 'var(--color-card)',
         backdropFilter: 'blur(16px)',
         WebkitBackdropFilter: 'blur(16px)',
-        border: '1px solid rgba(255,255,255,0.9)',
         boxShadow: 'var(--shadow-card)',
       }}
     >
@@ -59,7 +58,7 @@ export default function RecommendationCard({ rec }: Props) {
           >
             {categoryIcon(rec.category)}
           </div>
-          <h4 className="font-semibold text-slate-800 text-sm leading-snug">{rec.title}</h4>
+          <h4 className="font-semibold text-sm leading-snug" style={{ color: 'var(--color-text)' }}>{rec.title}</h4>
         </div>
         <span className={`text-xs font-semibold px-2.5 py-1 rounded-full shrink-0 ${styles.badge}`}>
           {styles.label}
@@ -67,10 +66,10 @@ export default function RecommendationCard({ rec }: Props) {
       </div>
 
       {/* Description */}
-      <p className="text-xs text-slate-500 leading-relaxed">{rec.description}</p>
+      <p className="text-xs leading-relaxed opacity-80" style={{ color: 'var(--color-text)' }}>{rec.description}</p>
 
       {/* CTA */}
-      <button className="mt-auto flex items-center gap-1.5 text-xs font-semibold text-emerald-600 hover:text-emerald-700 transition-colors w-fit group/btn">
+      <button className="mt-auto flex items-center gap-1.5 text-xs font-semibold transition-colors w-fit group/btn hover:opacity-90" style={{ color: 'var(--chart-primary)' }}>
         View Details
         <ArrowRight size={13} className="transition-transform group-hover/btn:translate-x-0.5" />
       </button>

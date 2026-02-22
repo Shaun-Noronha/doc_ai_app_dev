@@ -146,7 +146,13 @@ def build_dashboard_payload(conn) -> dict:
                 diverted_kg += kg
         diversion_rate = (diverted_kg / total_waste_kg * 100) if total_waste_kg > 0 else 0.0
 
-        # Sparkline
+        # Scope totals (for metrics)
+        scope_1_tco2e = round(stat_tco2e + veh_tco2e, 4)
+        scope_2_tco2e = round(elec_tco2e, 4)
+        scope_3_tco2e = round(ship_tco2e + waste_tco2e, 4)
+        water_volume_gallons = round(water_m3 * 264.172, 2) if water_m3 else 0.0
+
+        # Sparkline / monthly tCO2e
         results = {}
         for sql in [
             f"SELECT to_char(period_start, 'YYYY-MM') AS period, SUM(kwh * {ELECTRICITY_KG_PER_KWH}) / 1000 AS tco2e FROM parsed_electricity WHERE period_start IS NOT NULL GROUP BY 1",
@@ -160,12 +166,48 @@ def build_dashboard_payload(conn) -> dict:
                 results[period] = results.get(period, 0.0) + float(row.get("tco2e") or 0)
         sparkline = [{"period": k, "tco2e": round(v, 4)} for k, v in sorted(results.items()) if k]
 
+        # Documents that contributed data (have at least one parsed_* row)
+        doc_rows = _cur_query(
+            cur,
+            """
+            SELECT DISTINCT d.document_id, d.document_type, d.source_filename, d.created_at
+            FROM documents d
+            WHERE d.document_id IN (SELECT document_id FROM parsed_electricity)
+               OR d.document_id IN (SELECT document_id FROM parsed_stationary_fuel)
+               OR d.document_id IN (SELECT document_id FROM parsed_vehicle_fuel)
+               OR d.document_id IN (SELECT document_id FROM parsed_shipping)
+               OR d.document_id IN (SELECT document_id FROM parsed_waste)
+               OR d.document_id IN (SELECT document_id FROM parsed_water)
+            ORDER BY d.created_at DESC
+            LIMIT 500
+            """,
+        )
+        documents = [
+            {
+                "document_id": row["document_id"],
+                "document_type": row["document_type"] or "document",
+                "source_filename": row["source_filename"] or "",
+                "created_at": row["created_at"].isoformat() if hasattr(row["created_at"], "isoformat") else str(row["created_at"]),
+            }
+            for row in doc_rows
+        ]
+
         kpis = {
             "total_emissions_tco2e": round(total_tco2e, 2),
             "energy_kwh": round(energy_kwh, 2),
             "water_m3": round(water_m3, 2),
             "waste_diversion_rate": round(diversion_rate, 1),
             "sparkline": sparkline,
+        }
+
+        metrics = {
+            "scope_1_tco2e": scope_1_tco2e,
+            "scope_2_tco2e": scope_2_tco2e,
+            "scope_3_tco2e": scope_3_tco2e,
+            "water_usage": {
+                "volume_m3": round(water_m3, 4),
+                "volume_gallons": water_volume_gallons,
+            },
         }
 
         emissions_by_scope = [
@@ -209,8 +251,10 @@ def build_dashboard_payload(conn) -> dict:
 
     return {
         "kpis": kpis,
+        "metrics": metrics,
         "emissions_by_scope": emissions_by_scope,
         "emissions_by_source": emissions_by_source,
+        "documents": documents,
         "recommendations": recommendations,
     }
 
@@ -269,6 +313,16 @@ def get_dashboard() -> dict | None:
     if isinstance(raw, dict):
         return _make_json_serializable(raw)
     return None
+
+
+def get_dashboard_live() -> dict:
+    """
+    Build dashboard payload from parsed_* tables (live). Used when snapshot is empty
+    so new data (e.g. after seed) is visible without calling POST /api/refresh.
+    """
+    def _build(conn):
+        return build_dashboard_payload(conn)
+    return db.with_connection(_build)
 
 
 # ─── public API (read from snapshot when available; else live for backward compat) ───

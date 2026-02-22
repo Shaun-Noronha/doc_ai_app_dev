@@ -9,7 +9,7 @@ export default function ProgressRing({
   value,
   size = 72,
   strokeWidth = 7,
-  color = '#059669',
+  color = '#054A29',
 }: Props) {
   const r = (size - strokeWidth) / 2;
   const circumference = 2 * Math.PI * r;
@@ -46,7 +46,7 @@ export default function ProgressRing({
         textAnchor="middle"
         fontSize={size * 0.22}
         fontWeight="700"
-        fill="#0f172a"
+        fill="var(--color-text)"
         style={{ transform: `rotate(90deg) translateX(0)`, transformOrigin: `${size / 2}px ${size / 2}px`, fontFamily: 'Inter, sans-serif' }}
       >
         {Math.round(value)}%

@@ -38,23 +38,14 @@ app.add_middleware(
 )
 
 
-@app.get("/api/dashboard", summary="Full dashboard payload (cached)")
+@app.get("/api/dashboard", summary="Full dashboard payload (live)")
 def dashboard():
     """
-    Returns cached kpis, emissions_by_scope, emissions_by_source, recommendations
-    in one response. One DB read. Returns 503 if snapshot not yet built.
+    Returns kpis, emissions_by_scope, emissions_by_source, recommendations.
+    Always built from current DB so the dashboard reflects latest data (e.g. after seed).
     """
     try:
-        payload = queries.get_dashboard()
-        if payload is None:
-            raise HTTPException(
-                status_code=503,
-                detail=(
-                    "Dashboard not yet built. Apply schema (documents.sql includes dashboard_snapshot table), "
-                    "then run POST /api/refresh or ingest documents."
-                ),
-            )
-        return payload
+        return queries.get_dashboard_live()
     except HTTPException:
         raise
     except Exception as exc:

@@ -29,10 +29,31 @@ export interface Recommendation {
 
 export type NavSection = 'dashboard' | 'scope1' | 'scope2' | 'scope3' | 'water';
 
-/** Full dashboard payload from GET /api/dashboard (cached snapshot) */
+export interface DocumentSource {
+  document_id: number;
+  document_type: string;
+  source_filename: string;
+  created_at: string;
+}
+
+export interface WaterUsageMetrics {
+  volume_m3: number;
+  volume_gallons: number;
+}
+
+export interface DashboardMetrics {
+  scope_1_tco2e: number;
+  scope_2_tco2e: number;
+  scope_3_tco2e: number;
+  water_usage: WaterUsageMetrics;
+}
+
+/** Full dashboard payload from GET /api/dashboard */
 export interface DashboardPayload {
   kpis: KpiData;
+  metrics?: DashboardMetrics;
   emissions_by_scope: ScopeEmission[];
   emissions_by_source: SourceEmission[];
+  documents?: DocumentSource[];
   recommendations: Recommendation[];
 }
