@@ -1,10 +1,16 @@
 """
-Goal:
-- Read CSV from samples/vehicleData.csv
-- Drop driver_id (and car_id, date, distance_traveled; keep only fuel fields)
-- Merge/aggregate rows that share the same (period_start, period_end, fuel_type, unit)
-- Create a PostgreSQL table with: fuel_type, quantity, unit, period_start, period_end
-- Insert aggregated rows into Postgres (UPSERT so re-running won't duplicate)
+Read CSV from samples/vehicleData.csv, aggregate fuel rows, and insert into the
+schema's parsed_vehicle_fuel table (defined in schema/documents.sql).
+
+Steps:
+  1. Parse and aggregate CSV rows by (period_start, period_end, fuel_type, unit).
+  2. Insert one synthetic row into documents (document_type='vehicle_fuel_csv_import')
+     to satisfy the FK constraint.
+  3. Insert the merged fuel rows into parsed_vehicle_fuel with the new document_id.
+
+fuel_type and unit values from the CSV are normalised to match the CHECK constraints:
+  fuel_type: 'Gasoline' -> 'gasoline', 'Diesel' -> 'diesel'
+  unit: 'gallons' -> 'gallon', 'liters' -> 'liter'
 
 Uses DATABASE_URL from environment (.env). Run from package root:
     python -m src.vehicleDataIngest
@@ -13,46 +19,87 @@ Uses DATABASE_URL from environment (.env). Run from package root:
 from __future__ import annotations
 
 import csv
+import json
 import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Tuple
 
-import psycopg2
-from psycopg2.extras import execute_values
+from psycopg2.extras import Json, execute_values
 
-# Load .env so DATABASE_URL is available (same as main.py)
 from src.db import get_connection
 
-# Ensure .env is loaded when run as script
-import src.config  # noqa: F401
+import src.config  # noqa: F401  – loads .env so DATABASE_URL is available
 
 
-# ======= Data model for the target table =======
+# ─────────────────────────────────────────────────────────────────────────────
+# CHECK-constraint normalisation helpers
+# ─────────────────────────────────────────────────────────────────────────────
+
+_FUEL_TYPE_MAP: dict[str, str] = {
+    "gasoline": "gasoline",
+    "diesel": "diesel",
+    "petrol": "gasoline",
+}
+
+_UNIT_MAP: dict[str, str] = {
+    "gallon": "gallon",
+    "gallons": "gallon",
+    "liter": "liter",
+    "liters": "liter",
+    "litre": "liter",
+    "litres": "liter",
+    "l": "liter",
+}
+
+
+def _normalise_fuel_type(raw: str) -> str | None:
+    return _FUEL_TYPE_MAP.get(raw.strip().lower())
+
+
+def _normalise_unit(raw: str) -> str | None:
+    return _UNIT_MAP.get(raw.strip().lower())
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# CSV parsing and aggregation
+# ─────────────────────────────────────────────────────────────────────────────
+
 @dataclass(frozen=True)
 class FuelAggKey:
     period_start: str
     period_end: str
-    fuel_type: str
-    unit: str
+    fuel_type: str   # already normalised
+    unit: str        # already normalised
 
 
-def _parse_and_merge(csv_path: Path) -> List[Tuple[str, str, str, float, str]]:
+def _parse_and_merge(csv_path: Path) -> List[Tuple[str, float, str, str, str]]:
     """
-    Read CSV from csv_path and merge rows for the same:
-      (period_start, period_end, fuel_type, unit)
-    Quantity is the SUM of fuel_consumed. driver_id and other non-fuel columns are ignored.
+    Read CSV and merge rows sharing the same (period_start, period_end, fuel_type, unit).
+    Quantity is the SUM of fuel_consumed.
+
     Returns rows as (fuel_type, quantity, unit, period_start, period_end).
+    Rows with unrecognised fuel_type or unit are skipped (logged to stdout).
     """
     merged: Dict[FuelAggKey, float] = {}
 
     with csv_path.open("r", encoding="utf-8") as f:
         reader = csv.DictReader(f)
         for row in reader:
-            fuel_type = row.get("fuel_type", "").strip()
-            unit = row.get("unit", "").strip()
+            raw_fuel = row.get("fuel_type", "")
+            raw_unit = row.get("unit", "")
             period_start = row.get("period_start", "").strip()
             period_end = row.get("period_end", "").strip()
+
+            fuel_type = _normalise_fuel_type(raw_fuel)
+            unit = _normalise_unit(raw_unit)
+
+            if fuel_type is None:
+                print(f"  [skip] unrecognised fuel_type={raw_fuel!r}")
+                continue
+            if unit is None:
+                print(f"  [skip] unrecognised unit={raw_unit!r}")
+                continue
 
             try:
                 qty = float(row.get("fuel_consumed", 0))
@@ -67,29 +114,34 @@ def _parse_and_merge(csv_path: Path) -> List[Tuple[str, str, str, float, str]]:
             )
             merged[key] = merged.get(key, 0.0) + qty
 
-    out_rows = [
+    return [
         (key.fuel_type, qty, key.unit, key.period_start, key.period_end)
         for key, qty in sorted(
             merged.items(),
             key=lambda x: (x[0].period_start, x[0].fuel_type, x[0].unit),
         )
     ]
-    return out_rows
 
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Database insertion
+# ─────────────────────────────────────────────────────────────────────────────
 
 def push_fuel_to_postgres(
     database_url: str,
     csv_path: Path,
-    schema: str = "public",
-    table: str = "parsed_vehicle_fuel",
 ) -> int:
     """
-    Create the table if it doesn't exist and insert merged data from the CSV.
-    Uses UPSERT so re-running with the same data updates quantity (adds to existing).
-    Returns the number of merged rows inserted/updated.
+    Insert aggregated vehicle fuel rows from the CSV into parsed_vehicle_fuel.
+
+    Creates one row in documents (document_type='vehicle_fuel_csv_import') to satisfy
+    the FK constraint, then batch-inserts the merged rows into parsed_vehicle_fuel.
+
+    Returns the number of merged rows inserted.
     """
     merged_rows = _parse_and_merge(csv_path)
     if not merged_rows:
+        print("No valid rows to insert.")
         return 0
 
     conn = get_connection(database_url)
@@ -97,31 +149,40 @@ def push_fuel_to_postgres(
 
     try:
         with conn.cursor() as cur:
-            cur.execute(f"CREATE SCHEMA IF NOT EXISTS {schema};")
-
+            # Create one document entry for this CSV import run.
             cur.execute(
-                f"""
-                CREATE TABLE IF NOT EXISTS {schema}.{table} (
-                    id BIGSERIAL PRIMARY KEY,
-                    fuel_type TEXT NOT NULL CHECK (fuel_type IN ('Gasoline', 'Diesel')),
-                    quantity NUMERIC(10,2) NOT NULL CHECK (quantity >= 0),
-                    unit TEXT NOT NULL CHECK (unit IN ('gallons', 'liters')),
-                    period_start DATE NOT NULL,
-                    period_end DATE NOT NULL,
-                    CONSTRAINT uq_fuel_day UNIQUE (period_start, period_end, fuel_type, unit)
-                );
                 """
+                INSERT INTO documents (document_type, source_filename, exported_json)
+                VALUES (%s, %s, %s)
+                RETURNING document_id
+                """,
+                (
+                    "vehicle_fuel_csv_import",
+                    csv_path.name,
+                    Json({"source_file": str(csv_path), "doc_type": "vehicle_fuel_csv_import"}),
+                ),
             )
+            row = cur.fetchone()
+            document_id = row[0] if row else None
+            if not document_id:
+                raise RuntimeError("Failed to obtain document_id for CSV import.")
 
-            insert_sql = f"""
-                INSERT INTO {schema}.{table}
-                    (fuel_type, quantity, unit, period_start, period_end)
+            # Attach document_id to each fuel row.
+            rows_with_doc_id = [
+                (document_id, fuel_type, qty, unit, period_start, period_end)
+                for fuel_type, qty, unit, period_start, period_end in merged_rows
+            ]
+
+            execute_values(
+                cur,
+                """
+                INSERT INTO parsed_vehicle_fuel
+                    (document_id, fuel_type, quantity, unit, period_start, period_end)
                 VALUES %s
-                ON CONFLICT (period_start, period_end, fuel_type, unit)
-                DO UPDATE SET
-                    quantity = {schema}.{table}.quantity + EXCLUDED.quantity;
-            """
-            execute_values(cur, insert_sql, merged_rows, page_size=200)
+                """,
+                rows_with_doc_id,
+                page_size=200,
+            )
 
         conn.commit()
         return len(merged_rows)
@@ -133,7 +194,10 @@ def push_fuel_to_postgres(
         conn.close()
 
 
-# ======= Entry point =======
+# ─────────────────────────────────────────────────────────────────────────────
+# Entry point
+# ─────────────────────────────────────────────────────────────────────────────
+
 if __name__ == "__main__":
     package_root = Path(__file__).resolve().parent.parent
     csv_path = package_root / "samples" / "vehicleData.csv"
@@ -147,10 +211,5 @@ if __name__ == "__main__":
         print("Error: DATABASE_URL is not set. Set it in .env or the environment.")
         exit(1)
 
-    count = push_fuel_to_postgres(
-        database_url=database_url,
-        csv_path=csv_path,
-        schema="public",
-        table="parsed_vehicle_fuel",
-    )
-    print(f"Inserted/updated {count} merged rows into PostgreSQL.")
+    count = push_fuel_to_postgres(database_url=database_url, csv_path=csv_path)
+    print(f"Inserted {count} merged rows into parsed_vehicle_fuel.")
