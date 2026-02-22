@@ -229,3 +229,17 @@ FROM activities a
 LEFT JOIN emissions e ON e.activity_id = a.activity_id
 WHERE a.scope IS NOT NULL
 GROUP BY a.scope;
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Dashboard snapshot (precomputed payload for fast reads)
+-- ─────────────────────────────────────────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS dashboard_snapshot (
+  id           INTEGER PRIMARY KEY,
+  payload      JSONB NOT NULL,
+  refreshed_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+INSERT INTO dashboard_snapshot (id, payload, refreshed_at)
+VALUES (1, '{}'::jsonb, NOW())
+ON CONFLICT (id) DO NOTHING;

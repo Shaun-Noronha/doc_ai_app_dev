@@ -5,8 +5,19 @@ import SourceBarChart from '../components/SourceBarChart';
 import RecommendationCard from '../components/RecommendationCard';
 import { useDashboard } from '../hooks/useDashboard';
 
+function SkeletonCard() {
+  return (
+    <div className="rounded-2xl p-5 flex flex-col gap-3 min-h-[160px]"
+      style={{ background: 'var(--color-card)', boxShadow: 'var(--shadow-card)', border: '1px solid rgba(15,23,42,0.06)' }}>
+      <div className="h-3 w-24 rounded bg-slate-200 animate-pulse" />
+      <div className="h-9 w-32 rounded bg-slate-200 animate-pulse mt-2" />
+      <div className="h-3 w-40 rounded bg-slate-100 animate-pulse mt-1" />
+    </div>
+  );
+}
+
 export default function Dashboard() {
-  const { kpis, byScope, bySource, recommendations, loading, error } = useDashboard();
+  const { kpis, byScope, bySource, recommendations, loading, error, retry } = useDashboard();
 
   const today = new Date().toLocaleDateString('en-US', {
     weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
@@ -28,9 +39,18 @@ export default function Dashboard() {
         </div>
         <div className="flex items-center gap-3">
           {error && (
-            <span className="text-xs bg-rose-100 text-rose-600 border border-rose-200 px-3 py-1.5 rounded-full font-medium">
-              {error}
-            </span>
+            <div className="flex items-center gap-2">
+              <span className="text-xs bg-rose-100 text-rose-600 border border-rose-200 px-3 py-1.5 rounded-full font-medium max-w-xs truncate" title={error}>
+                {error}
+              </span>
+              <button
+                type="button"
+                onClick={() => retry()}
+                className="text-xs font-semibold px-3 py-1.5 rounded-full bg-emerald-500 text-white hover:bg-emerald-600 transition-colors"
+              >
+                Refresh dashboard
+              </button>
+            </div>
           )}
           <button className="w-9 h-9 rounded-xl flex items-center justify-center text-slate-500 hover:text-slate-700 hover:bg-white transition-all"
             style={{ boxShadow: 'var(--shadow-card)' }}>
@@ -49,8 +69,12 @@ export default function Dashboard() {
       {/* Main content */}
       <main className="flex-1 px-8 py-6 flex flex-col gap-6 max-w-[1600px] w-full mx-auto">
 
-        {/* ── KPI row ─────────────────────────────────────── */}
+        {/* ── KPI row (skeletons on load) ──────────────────── */}
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+          {loading && !kpis ? (
+            [...Array(4)].map((_, i) => <SkeletonCard key={i} />)
+          ) : (
+            <>
           {/* Total Emissions */}
           <KpiCard
             title="Total Emissions"
@@ -102,6 +126,8 @@ export default function Dashboard() {
             progressRing={kpis ? kpis.waste_diversion_rate : 0}
             loading={loading}
           />
+            </>
+          )}
         </div>
 
         {/* ── Charts row ──────────────────────────────────── */}

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { api } from '../api';
 import type { KpiData, ScopeEmission, SourceEmission, Recommendation } from '../types';
 
@@ -9,10 +9,12 @@ export interface DashboardState {
   recommendations: Recommendation[];
   loading: boolean;
   error: string | null;
+  /** Rebuild snapshot then refetch (e.g. after 503). */
+  retry: () => Promise<void>;
 }
 
 export function useDashboard(): DashboardState {
-  const [state, setState] = useState<DashboardState>({
+  const [state, setState] = useState<Omit<DashboardState, 'retry'>>({
     kpis: null,
     byScope: [],
     bySource: [],
@@ -21,34 +23,52 @@ export function useDashboard(): DashboardState {
     error: null,
   });
 
-  useEffect(() => {
-    let cancelled = false;
-
-    async function load() {
-      try {
-        const [kpis, byScope, bySource, recommendations] = await Promise.all([
-          api.kpis(),
-          api.emissionsByScope(),
-          api.emissionsBySource(),
-          api.recommendations(),
-        ]);
-        if (!cancelled) {
-          setState({ kpis, byScope, bySource, recommendations, loading: false, error: null });
-        }
-      } catch (err) {
-        if (!cancelled) {
-          setState((s) => ({
-            ...s,
-            loading: false,
-            error: (err as Error).message ?? 'Failed to load dashboard data.',
-          }));
-        }
-      }
+  const load = useCallback(async () => {
+    setState((s) => ({ ...s, loading: true, error: null }));
+    try {
+      const payload = await api.dashboard();
+      setState({
+        kpis: payload.kpis,
+        byScope: payload.emissions_by_scope,
+        bySource: payload.emissions_by_source,
+        recommendations: payload.recommendations,
+        loading: false,
+        error: null,
+      });
+    } catch (err) {
+      setState((s) => ({
+        ...s,
+        loading: false,
+        error: (err as Error).message ?? 'Failed to load dashboard data.',
+      }));
     }
-
-    load();
-    return () => { cancelled = true; };
   }, []);
 
-  return state;
+  const retry = useCallback(async () => {
+    setState((s) => ({ ...s, loading: true, error: null }));
+    try {
+      await api.refresh();
+      const payload = await api.dashboard();
+      setState({
+        kpis: payload.kpis,
+        byScope: payload.emissions_by_scope,
+        bySource: payload.emissions_by_source,
+        recommendations: payload.recommendations,
+        loading: false,
+        error: null,
+      });
+    } catch (err) {
+      setState((s) => ({
+        ...s,
+        loading: false,
+        error: (err as Error).message ?? 'Refresh failed.',
+      }));
+    }
+  }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  return { ...state, retry };
 }

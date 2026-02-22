@@ -38,6 +38,39 @@ app.add_middleware(
 )
 
 
+@app.get("/api/dashboard", summary="Full dashboard payload (cached)")
+def dashboard():
+    """
+    Returns cached kpis, emissions_by_scope, emissions_by_source, recommendations
+    in one response. One DB read. Returns 503 if snapshot not yet built.
+    """
+    try:
+        payload = queries.get_dashboard()
+        if payload is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Dashboard not yet built. Run POST /api/refresh or ingest documents first.",
+            )
+        return payload
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.post("/api/refresh", summary="Rebuild dashboard snapshot")
+def refresh():
+    """
+    Recompute dashboard from parsed_* and write to dashboard_snapshot.
+    Call after ingest or on a schedule.
+    """
+    try:
+        queries.refresh_snapshot()
+        return {"status": "ok", "message": "Dashboard snapshot refreshed."}
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
 @app.get("/api/kpis", summary="Top-level KPI metrics")
 def kpis():
     """

@@ -28,3 +28,11 @@ export interface Recommendation {
 }
 
 export type NavSection = 'dashboard' | 'scope1' | 'scope2' | 'scope3' | 'water';
+
+/** Full dashboard payload from GET /api/dashboard (cached snapshot) */
+export interface DashboardPayload {
+  kpis: KpiData;
+  emissions_by_scope: ScopeEmission[];
+  emissions_by_source: SourceEmission[];
+  recommendations: Recommendation[];
+}
