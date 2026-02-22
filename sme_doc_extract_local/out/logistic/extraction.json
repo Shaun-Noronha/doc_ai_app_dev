@@ -1,55 +1,40 @@
 {
-  "source_file": "/home/yugesh/Documents/herHacks/backend/doc_ai_app_dev/sme_doc_extract_local/samples/logistic.png",
-  "doc_type": "invoice",
-  "extraction_method": "document_ai + gemini",
-  "extraction": {
-    "vendor_name": "ShipWorks",
-    "invoice_number": "4684",
-    "invoice_date": "2019-05-06",
-    "due_date": null,
-    "currency": "USD",
-    "subtotal": 206.01,
-    "tax": null,
-    "total": 206.01,
-    "line_items": [
-      {
-        "description": "Orange Hat",
-        "quantity": 2.0,
-        "weight": 0.29,
-        "unit_price": 23.03,
-        "total_price": 46.06
-      },
-      {
-        "description": "Green Hat",
-        "quantity": 2.0,
-        "weight": 0.96,
-        "unit_price": 31.99,
-        "total_price": 63.98
-      },
-      {
-        "description": "Green Hat",
-        "quantity": 2.0,
-        "weight": 0.96,
-        "unit_price": 31.99,
-        "total_price": 63.98
-      },
-      {
-        "description": "Green Hat",
-        "quantity": 1.0,
-        "weight": 0.96,
-        "unit_price": 31.99,
-        "total_price": 31.99
-      }
-    ]
-  },
-  "confidence": {
-    "vendor_name": 0.7,
-    "invoice_number": 0.7,
-    "invoice_date": 0.7,
-    "subtotal": 0.7,
-    "tax": 0.0,
-    "total": 0.7
-  },
-  "warnings": [],
-  "created_at": "2026-02-22T07:53:30.808529+00:00"
+  "vendor_name": "ShipWorks",
+  "invoice_number": "4684",
+  "invoice_date": "2019-05-06",
+  "due_date": null,
+  "currency": "USD",
+  "subtotal": 206.01,
+  "tax": null,
+  "total": 206.01,
+  "line_items": [
+    {
+      "description": "Orange Hat",
+      "quantity": 2,
+      "weight": 0.29,
+      "unit_price": 23.03,
+      "total_price": 46.06
+    },
+    {
+      "description": "Green Hat",
+      "quantity": 2,
+      "weight": 0.96,
+      "unit_price": 31.99,
+      "total_price": 63.98
+    },
+    {
+      "description": "Green Hat",
+      "quantity": 2,
+      "weight": 0.96,
+      "unit_price": 31.99,
+      "total_price": 63.98
+    },
+    {
+      "description": "Green Hat",
+      "quantity": 1,
+      "weight": 0.96,
+      "unit_price": 31.99,
+      "total_price": 31.99
+    }
+  ]
 }

@@ -267,10 +267,10 @@ def _build_dashboard_payload(conn) -> dict:
 
 def _utility_review_fields(extraction: dict, subtype: str) -> list[dict]:
     fields: list[dict] = [
-        {"key": "utility_type",          "label": "Utility Type",      "value": subtype,                                   "editable": False},
-        {"key": "location",              "label": "Location",          "value": extraction.get("location"),                "editable": False},
-        {"key": "billing_period_start",  "label": "Period Start",      "value": extraction.get("billing_period_start"),    "editable": False},
-        {"key": "billing_period_end",    "label": "Period End",        "value": extraction.get("billing_period_end"),      "editable": False},
+        {"key": "utility_type",          "label": "Utility Type",      "value": subtype,                                   "editable": True},
+        {"key": "location",              "label": "Location",          "value": extraction.get("location"),                "editable": True},
+        {"key": "billing_period_start",  "label": "Period Start",      "value": extraction.get("billing_period_start"),    "editable": True},
+        {"key": "billing_period_end",    "label": "Period End",        "value": extraction.get("billing_period_end"),      "editable": True},
     ]
     if subtype == "electricity":
         fields.append({"key": "electricity_kwh",     "label": "Electricity (kWh)",  "value": extraction.get("electricity_kwh"),     "editable": True})
@@ -278,7 +278,7 @@ def _utility_review_fields(extraction: dict, subtype: str) -> list[dict]:
         fields.append({"key": "natural_gas_therms",  "label": "Gas (therms)",       "value": extraction.get("natural_gas_therms"),  "editable": True})
     elif subtype == "water":
         fields.append({"key": "water_volume",        "label": "Water Volume",       "value": extraction.get("water_volume"),        "editable": True})
-        fields.append({"key": "water_unit",          "label": "Unit",               "value": extraction.get("water_unit") or "gallon", "editable": False})
+        fields.append({"key": "water_unit",          "label": "Unit",               "value": extraction.get("water_unit") or "gallon", "editable": True})
     return fields
 
 
@@ -288,28 +288,28 @@ def _logistics_review_fields(extraction: dict) -> list[dict]:
     origin_str = ", ".join(filter(None, [origin.get("city"), origin.get("state"), origin.get("country")]))
     dest_str   = ", ".join(filter(None, [dest.get("city"),   dest.get("state"),   dest.get("country")]))
     return [
-        {"key": "shipment_id",  "label": "Shipment ID",      "value": extraction.get("shipment_id"),  "editable": False},
-        {"key": "carrier",      "label": "Carrier",          "value": extraction.get("carrier"),      "editable": False},
-        {"key": "mode",         "label": "Transport Mode",   "value": extraction.get("mode"),         "editable": False},
-        {"key": "date",         "label": "Shipment Date",    "value": extraction.get("date"),         "editable": False},
-        {"key": "origin",       "label": "Origin",           "value": origin_str or None,             "editable": False},
-        {"key": "destination",  "label": "Destination",      "value": dest_str or None,               "editable": False},
-        {"key": "weight_kg",    "label": "Weight (kg) ★",   "value": extraction.get("weight_kg"),    "editable": True},
-        {"key": "distance_km",  "label": "Distance (km) ★", "value": extraction.get("distance_km"),  "editable": True},
-        {"key": "packages_count","label": "Packages",        "value": extraction.get("packages_count"), "editable": False},
+        {"key": "shipment_id",  "label": "Shipment ID",    "value": extraction.get("shipment_id"),    "editable": True},
+        {"key": "carrier",      "label": "Carrier",        "value": extraction.get("carrier"),        "editable": True},
+        {"key": "mode",         "label": "Transport Mode", "value": extraction.get("mode"),           "editable": True},
+        {"key": "date",         "label": "Shipment Date",  "value": extraction.get("date"),           "editable": True},
+        {"key": "origin",       "label": "Origin",         "value": origin_str or None,               "editable": True},
+        {"key": "destination",  "label": "Destination",    "value": dest_str or None,                 "editable": True},
+        {"key": "weight_kg",    "label": "Weight (kg)",    "value": extraction.get("weight_kg"),      "editable": True},
+        {"key": "distance_km",  "label": "Distance (km)",  "value": extraction.get("distance_km"),    "editable": True},
+        {"key": "packages_count","label": "Packages",      "value": extraction.get("packages_count"), "editable": True},
     ]
 
 
 def _invoice_review_fields(extraction: dict) -> list[dict]:
     return [
-        {"key": "vendor_name",    "label": "Vendor",          "value": extraction.get("vendor_name"),    "editable": False},
-        {"key": "invoice_number", "label": "Invoice No.",     "value": extraction.get("invoice_number"), "editable": False},
-        {"key": "invoice_date",   "label": "Invoice Date",    "value": extraction.get("invoice_date"),   "editable": False},
-        {"key": "due_date",       "label": "Due Date",        "value": extraction.get("due_date"),       "editable": False},
-        {"key": "subtotal",       "label": "Subtotal",        "value": extraction.get("subtotal"),       "editable": False},
-        {"key": "tax",            "label": "Tax",             "value": extraction.get("tax"),            "editable": False},
-        {"key": "total",          "label": "Total (★)",       "value": extraction.get("total"),          "editable": True},
-        {"key": "currency",       "label": "Currency",        "value": extraction.get("currency"),       "editable": False},
+        {"key": "vendor_name",    "label": "Vendor",        "value": extraction.get("vendor_name"),    "editable": True},
+        {"key": "invoice_number", "label": "Invoice No.",   "value": extraction.get("invoice_number"), "editable": True},
+        {"key": "invoice_date",   "label": "Invoice Date",  "value": extraction.get("invoice_date"),   "editable": True},
+        {"key": "due_date",       "label": "Due Date",      "value": extraction.get("due_date"),       "editable": True},
+        {"key": "subtotal",       "label": "Subtotal",      "value": extraction.get("subtotal"),       "editable": True},
+        {"key": "tax",            "label": "Tax",           "value": extraction.get("tax"),            "editable": True},
+        {"key": "total",          "label": "Total",         "value": extraction.get("total"),          "editable": True},
+        {"key": "currency",       "label": "Currency",      "value": extraction.get("currency"),       "editable": True},
     ]
 
 

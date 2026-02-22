@@ -226,7 +226,7 @@ export default function UploadModal({ onClose, onDone }: Props) {
               <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 flex items-start gap-2">
                 <Star size={14} className="text-amber-500 fill-amber-400 mt-0.5 shrink-0" />
                 <p className="text-xs text-amber-700">
-                  Fields marked with a star are editable. Verify the highlighted value before saving.
+                  All fields are editable. If anything was misdetected, correct it here before saving.
                 </p>
               </div>
               <div className="flex flex-col gap-2">
