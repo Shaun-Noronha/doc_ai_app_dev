@@ -48,18 +48,19 @@ export default function Sidebar({ active, onNav }: Props) {
               onClick={() => onNav(item.id)}
               className={`flex items-center gap-3 px-3 py-3 rounded-xl text-left w-full transition-all duration-150 group/item
                 ${isActive
-                  ? 'bg-emerald-600/20 text-emerald-400'
+                  ? ''
                   : 'text-slate-400 hover:text-white hover:bg-white/5'
                 }`}
+              style={isActive ? { background: 'rgba(150,224,114,0.2)', color: '#96E072' } : undefined}
             >
-              <span className={`shrink-0 ${isActive ? 'text-emerald-400' : ''}`}>
+              <span className="shrink-0" style={isActive ? { color: '#96E072' } : undefined}>
                 {item.icon}
               </span>
               <span className="text-sm font-medium whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity duration-200">
                 {item.label}
               </span>
               {isActive && (
-                <span className="ml-auto w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0 opacity-0 group-hover:opacity-100" />
+                <span className="ml-auto w-1.5 h-1.5 rounded-full shrink-0 opacity-0 group-hover:opacity-100" style={{ background: '#96E072' }} />
               )}
             </button>
           );

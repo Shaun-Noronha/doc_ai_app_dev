@@ -1,14 +1,14 @@
 import { Activity, Zap, Droplets, Recycle, TrendingDown, Bell, Settings } from 'lucide-react';
 import KpiCard from '../components/KpiCard';
 import ScopeDonut from '../components/ScopeDonut';
-import SourceBarChart from '../components/SourceBarChart';
+import ActivitiesRankedList from '../components/ActivitiesRankedList';
 import RecommendationCard from '../components/RecommendationCard';
 import { useDashboard } from '../hooks/useDashboard';
 
 function SkeletonCard() {
   return (
     <div className="rounded-2xl p-5 flex flex-col gap-3 min-h-[160px]"
-      style={{ background: 'var(--color-card)', boxShadow: 'var(--shadow-card)', border: '1px solid rgba(15,23,42,0.06)' }}>
+      style={{ background: 'var(--color-card)', boxShadow: 'var(--shadow-card)' }}>
       <div className="h-3 w-24 rounded bg-slate-200 animate-pulse" />
       <div className="h-9 w-32 rounded bg-slate-200 animate-pulse mt-2" />
       <div className="h-3 w-40 rounded bg-slate-100 animate-pulse mt-1" />
@@ -28,14 +28,14 @@ export default function Dashboard() {
       {/* Top header bar */}
       <header className="sticky top-0 z-40 flex items-center justify-between px-8 py-4"
         style={{
-          background: 'rgba(241,245,249,0.85)',
+          background: 'rgba(254,250,224,0.9)',
           backdropFilter: 'blur(16px)',
-          borderBottom: '1px solid rgba(15,23,42,0.06)',
+          borderBottom: '1px solid var(--color-card-outline)',
         }}
       >
         <div>
-          <h1 className="text-xl font-bold text-slate-800">Sustainability Dashboard</h1>
-          <p className="text-xs text-slate-400 mt-0.5">{today}</p>
+          <h1 className="text-xl font-bold" style={{ color: 'var(--color-text)' }}>Sustainability Dashboard</h1>
+          <p className="text-xs mt-0.5 opacity-70" style={{ color: 'var(--color-text)' }}>{today}</p>
         </div>
         <div className="flex items-center gap-3">
           {error && (
@@ -46,21 +46,23 @@ export default function Dashboard() {
               <button
                 type="button"
                 onClick={() => retry()}
-                className="text-xs font-semibold px-3 py-1.5 rounded-full bg-emerald-500 text-white hover:bg-emerald-600 transition-colors"
+                className="text-xs font-semibold px-3 py-1.5 rounded-full text-white transition-colors"
+                style={{ background: 'var(--chart-primary)' }}
               >
                 Refresh dashboard
               </button>
             </div>
           )}
-          <button className="w-9 h-9 rounded-xl flex items-center justify-center text-slate-500 hover:text-slate-700 hover:bg-white transition-all"
-            style={{ boxShadow: 'var(--shadow-card)' }}>
+          <button className="w-9 h-9 rounded-xl flex items-center justify-center hover:bg-white/80 transition-all"
+            style={{ color: 'var(--color-text)', boxShadow: 'var(--shadow-card)' }}>
             <Bell size={17} />
           </button>
-          <button className="w-9 h-9 rounded-xl flex items-center justify-center text-slate-500 hover:text-slate-700 hover:bg-white transition-all"
-            style={{ boxShadow: 'var(--shadow-card)' }}>
+          <button className="w-9 h-9 rounded-xl flex items-center justify-center hover:bg-white/80 transition-all"
+            style={{ color: 'var(--color-text)', boxShadow: 'var(--shadow-card)' }}>
             <Settings size={17} />
           </button>
-          <div className="w-9 h-9 rounded-xl bg-emerald-500 flex items-center justify-center text-white text-sm font-bold shrink-0">
+          <div className="w-9 h-9 rounded-xl flex items-center justify-center text-white text-sm font-bold shrink-0"
+            style={{ background: 'var(--chart-primary)' }}>
             S
           </div>
         </div>
@@ -82,7 +84,7 @@ export default function Dashboard() {
             unit="tCO₂e"
             subtext="All scopes combined"
             icon={<Activity size={18} color="white" />}
-            iconBg="linear-gradient(135deg, #059669 0%, #10b981 100%)"
+            iconBg="#054A29"
             sparkline={kpis?.sparkline ?? []}
             loading={loading}
             trend={kpis ? (kpis.total_emissions_tco2e > 0 ? 'neutral' : 'down') : 'neutral'}
@@ -96,7 +98,7 @@ export default function Dashboard() {
             unit="kWh"
             subtext="Total electricity consumed"
             icon={<Zap size={18} color="white" />}
-            iconBg="linear-gradient(135deg, #0ea5e9 0%, #38bdf8 100%)"
+            iconBg="#054A29"
             loading={loading}
             trend="neutral"
             trendText="Scope 2 consumption"
@@ -109,7 +111,7 @@ export default function Dashboard() {
             unit="m³"
             subtext="Total water usage"
             icon={<Droplets size={18} color="white" />}
-            iconBg="linear-gradient(135deg, #0891b2 0%, #22d3ee 100%)"
+            iconBg="#054A29"
             loading={loading}
             trend="neutral"
             trendText="Non-GHG metric"
@@ -122,7 +124,7 @@ export default function Dashboard() {
             unit="%"
             subtext="Recycled + composted"
             icon={<Recycle size={18} color="white" />}
-            iconBg="linear-gradient(135deg, #7c3aed 0%, #a78bfa 100%)"
+            iconBg="#054A29"
             progressRing={kpis ? kpis.waste_diversion_rate : 0}
             loading={loading}
           />
@@ -136,7 +138,7 @@ export default function Dashboard() {
             <ScopeDonut data={byScope} loading={loading} />
           </div>
           <div style={{ minHeight: '420px' }}>
-            <SourceBarChart data={bySource} loading={loading} />
+            <ActivitiesRankedList data={bySource} loading={loading} />
           </div>
         </div>
 
@@ -144,21 +146,20 @@ export default function Dashboard() {
         <section>
           {/* Section header */}
           <div className="flex items-center gap-3 mb-4">
-            <div className="w-8 h-8 rounded-xl flex items-center justify-center"
-              style={{ background: 'linear-gradient(135deg, #059669 0%, #10b981 100%)' }}>
+            <div className="w-8 h-8 rounded-xl flex items-center justify-center" style={{ background: 'var(--chart-primary)' }}>
               <TrendingDown size={16} color="white" />
             </div>
             <div>
-              <h2 className="text-sm font-bold uppercase tracking-widest text-slate-600">AI Recommendations</h2>
-              <p className="text-xs text-slate-400">Actionable improvements based on your sustainability data</p>
+              <h2 className="text-sm font-bold uppercase tracking-widest" style={{ color: 'var(--color-text)' }}>AI Recommendations</h2>
+              <p className="text-xs opacity-70" style={{ color: 'var(--color-text)' }}>Actionable improvements based on your sustainability data</p>
             </div>
           </div>
 
           {loading ? (
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
               {[...Array(2)].map((_, i) => (
-                <div key={i} className="rounded-2xl p-5 h-40 bg-white/70 animate-pulse"
-                  style={{ boxShadow: 'var(--shadow-card)' }} />
+                <div key={i} className="rounded-2xl p-5 h-40 animate-pulse"
+                  style={{ background: 'var(--color-card)', boxShadow: 'var(--shadow-card)' }} />
               ))}
             </div>
           ) : (
@@ -171,7 +172,7 @@ export default function Dashboard() {
         </section>
 
         {/* ── Footer ──────────────────────────────────────── */}
-        <footer className="pt-2 pb-4 text-center text-xs text-slate-400">
+        <footer className="pt-2 pb-4 text-center text-xs opacity-70" style={{ color: 'var(--color-text)' }}>
           SME Sustainability Pulse · Data sourced from Document AI pipeline · Emission factors: EPA 2023
         </footer>
       </main>

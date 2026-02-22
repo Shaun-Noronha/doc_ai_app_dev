@@ -1,14 +1,17 @@
 @import "tailwindcss";
 
 :root {
-  --color-bg: #f1f5f9;
+  --color-bg: #FEFAE0;
+  --color-text: #054A29;
   --color-sidebar: #0f172a;
-  --color-card: rgba(255, 255, 255, 0.72);
-  --color-emerald: #059669;
-  --color-emerald-light: #10b981;
+  --color-card: #FEFAE0;
+  --color-card-outline: rgba(5, 74, 41, 0.18);
+  --color-emerald: #054A29;
+  --chart-primary: #054A29;
+  --chart-secondary: #96E072;
   --color-slate: #0f172a;
   --color-slate-mid: #334155;
-  --shadow-card: 0 4px 24px 0 rgba(15, 23, 42, 0.08);
+  --shadow-card: 0 2px 8px rgba(5, 74, 41, 0.08);
 }
 
 * {
@@ -22,26 +25,13 @@ html {
 body {
   font-family: "Inter", "Roboto", ui-sans-serif, system-ui, sans-serif;
   background: var(--color-bg);
-  color: var(--color-slate);
+  color: var(--color-text);
   margin: 0;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* ── Background mesh pattern ───────────────────────────────────────── */
-body::before {
-  content: "";
-  position: fixed;
-  inset: 0;
-  z-index: 0;
-  pointer-events: none;
-  background:
-    radial-gradient(ellipse 80% 50% at 20% 10%, rgba(5,150,105,0.07) 0%, transparent 60%),
-    radial-gradient(ellipse 60% 40% at 80% 90%, rgba(14,165,233,0.06) 0%, transparent 60%),
-    radial-gradient(ellipse 50% 40% at 60% 30%, rgba(139,92,246,0.04) 0%, transparent 60%);
-}
-
-/* All content above the mesh */
+/* No gradients — flat background */
 #root {
   position: relative;
   z-index: 1;
@@ -49,9 +39,7 @@ body::before {
 
 /* ── Glassmorphism card hover glow ─────────────────────────────────── */
 .kpi-card:hover {
-  box-shadow:
-    0 8px 32px 0 rgba(15, 23, 42, 0.12),
-    0 0 0 1.5px rgba(5, 150, 105, 0.18) inset;
+  box-shadow: 0 4px 16px rgba(5, 74, 41, 0.12);
 }
 
 /* ── Recharts tweaks ──────────────────────────────────────────────── */
@@ -72,9 +60,9 @@ body::before {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: rgba(15, 23, 42, 0.12);
+  background: rgba(5, 74, 41, 0.25);
   border-radius: 99px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(15, 23, 42, 0.2);
+  background: rgba(5, 74, 41, 0.4);
 }

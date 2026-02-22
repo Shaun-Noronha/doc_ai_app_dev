@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api } from '../api';
-import type { KpiData, ScopeEmission, SourceEmission, Recommendation } from '../types';
+import type { KpiData, ScopeEmission, SourceEmission, Recommendation, DashboardMetrics, DocumentSource } from '../types';
 
 export interface DashboardState {
   kpis: KpiData | null;
+  metrics: DashboardMetrics | null;
+  documents: DocumentSource[];
   byScope: ScopeEmission[];
   bySource: SourceEmission[];
   recommendations: Recommendation[];
@@ -16,6 +18,8 @@ export interface DashboardState {
 export function useDashboard(): DashboardState {
   const [state, setState] = useState<Omit<DashboardState, 'retry'>>({
     kpis: null,
+    metrics: null,
+    documents: [],
     byScope: [],
     bySource: [],
     recommendations: [],
@@ -29,6 +33,8 @@ export function useDashboard(): DashboardState {
       const payload = await api.dashboard();
       setState({
         kpis: payload.kpis,
+        metrics: payload.metrics ?? null,
+        documents: payload.documents ?? [],
         byScope: payload.emissions_by_scope,
         bySource: payload.emissions_by_source,
         recommendations: payload.recommendations,
@@ -51,6 +57,8 @@ export function useDashboard(): DashboardState {
       const payload = await api.dashboard();
       setState({
         kpis: payload.kpis,
+        metrics: payload.metrics ?? null,
+        documents: payload.documents ?? [],
         byScope: payload.emissions_by_scope,
         bySource: payload.emissions_by_source,
         recommendations: payload.recommendations,
