@@ -10,10 +10,13 @@ Upload/confirm run in-process via sme_doc_extract_local.service (no separate Doc
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 from pathlib import Path
 
 from dotenv import load_dotenv
+
+logger = logging.getLogger(__name__)
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -79,8 +82,9 @@ async def upload(file: UploadFile = File(...)):
 @app.post("/api/confirm", summary="Confirm extracted fields and save to DB")
 async def confirm(body: dict):
     """
-    Save confirmed extraction, run calculations, return updated dashboard.
-    Runs in-process via sme_doc_extract_local.service.
+    Save confirmed extraction, run calculations, refresh dashboard snapshot,
+    optionally regenerate recommendations, then return updated dashboard.
+    No manual curl needed after upload+confirm from the dashboard.
     """
     if _handle_confirm is None:
         raise HTTPException(
@@ -89,6 +93,20 @@ async def confirm(body: dict):
         )
     try:
         doc_id = await asyncio.to_thread(_handle_confirm, body)
+
+        # Refresh snapshot so GET /api/dashboard and scope/water endpoints stay in sync
+        try:
+            queries.refresh_snapshot()
+        except Exception as exc:
+            logger.warning("Could not refresh dashboard snapshot after confirm: %s", exc)
+
+        # Regenerate recommendations so new document is reflected without manual POST /recommendations/generate
+        try:
+            await asyncio.to_thread(rec_engine.generate, 3)
+            queries.refresh_snapshot()
+        except Exception as exc:
+            logger.warning("Could not generate recommendations after confirm: %s", exc)
+
         dashboard = queries.get_dashboard_live()
         return {"ok": True, "document_id": doc_id, "dashboard": dashboard}
     except RuntimeError as e:
