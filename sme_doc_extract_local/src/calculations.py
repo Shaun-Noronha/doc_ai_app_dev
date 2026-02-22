@@ -200,7 +200,7 @@ def calc_electricity_emissions(
     period_end: str | None = None,
 ) -> list[EmissionResult]:
     """
-    Process all rows in the ``electricity`` table (optionally filtered by period)
+    Process all rows in the ``parsed_electricity`` table (optionally filtered by period)
     and write Scope 2 emission records to ``activities`` + ``emissions``.
 
     Parameters
@@ -216,8 +216,8 @@ def calc_electricity_emissions(
     results: list[EmissionResult] = []
 
     query = """
-        SELECT id, kwh, location, period_start, period_end
-        FROM electricity
+        SELECT parsed_id, kwh, location, period_start, period_end
+        FROM parsed_electricity
         WHERE kwh IS NOT NULL AND kwh > 0
     """
     params: list[Any] = []
@@ -240,7 +240,7 @@ def calc_electricity_emissions(
 
             activity_id = _upsert_activity(
                 conn,
-                parsed_table="electricity",
+                parsed_table="parsed_electricity",
                 parsed_id=elec_id,
                 activity_type="purchased_electricity",
                 scope=2,
@@ -259,7 +259,7 @@ def calc_electricity_emissions(
                 activity_type="purchased_electricity",
                 scope=2,
                 source_id=elec_id,
-                source_table="electricity",
+                source_table="parsed_electricity",
                 emissions_kg_co2e=emission_kg,
                 emissions_metric_tons=emission_kg / 1_000.0,
                 factor_used=factor,
@@ -289,17 +289,17 @@ def calc_stationary_fuel_emissions(
     period_end: str | None = None,
 ) -> list[EmissionResult]:
     """
-    Process all rows in the ``stationary_fuel`` table and write Scope 1
+    Process all rows in the ``parsed_stationary_fuel`` table and write Scope 1
     emission records.
 
-    Supports fuel types: natural_gas, propane, heating_oil, diesel, coal.
-    Supported units per fuel: therms, ccf, mcf, cubic_feet, m3, kg, gallons, liters.
+    Supports fuel types: natural_gas, propane, heating_oil.
+    Supported units per fuel: therm, gallon, ft3.
     """
     results: list[EmissionResult] = []
 
     query = """
-        SELECT id, fuel_type, quantity, unit, period_start, period_end
-        FROM stationary_fuel
+        SELECT parsed_id, fuel_type, quantity, unit, period_start, period_end
+        FROM parsed_stationary_fuel
         WHERE quantity IS NOT NULL AND quantity > 0
     """
     params: list[Any] = []
@@ -323,7 +323,7 @@ def calc_stationary_fuel_emissions(
 
             activity_id = _upsert_activity(
                 conn,
-                parsed_table="stationary_fuel",
+                parsed_table="parsed_stationary_fuel",
                 parsed_id=sf_id,
                 activity_type="stationary_fuel_combustion",
                 scope=1,
@@ -336,7 +336,7 @@ def calc_stationary_fuel_emissions(
                 activity_type="stationary_fuel_combustion",
                 scope=1,
                 source_id=sf_id,
-                source_table="stationary_fuel",
+                source_table="parsed_stationary_fuel",
                 emissions_kg_co2e=emission_kg,
                 emissions_metric_tons=emission_kg / 1_000.0,
                 factor_used=factor,
@@ -366,17 +366,17 @@ def calc_vehicle_fuel_emissions(
     period_end: str | None = None,
 ) -> list[EmissionResult]:
     """
-    Process all rows in the ``vehicles`` table and write Scope 1 mobile
+    Process all rows in the ``parsed_vehicle_fuel`` table and write Scope 1 mobile
     combustion emission records.
 
-    Supports fuel types: gasoline, diesel, e85, cng.
+    Supports fuel types: gasoline, diesel.
     Supported units: gallon, liter.
     """
     results: list[EmissionResult] = []
 
     query = """
         SELECT parsed_id, fuel_type, quantity, unit, period_start, period_end
-        FROM vehicles
+        FROM parsed_vehicle_fuel
         WHERE quantity IS NOT NULL AND quantity > 0
     """
     params: list[Any] = []
@@ -400,7 +400,7 @@ def calc_vehicle_fuel_emissions(
 
             activity_id = _upsert_activity(
                 conn,
-                parsed_table="vehicles",
+                parsed_table="parsed_vehicle_fuel",
                 parsed_id=v_id,
                 activity_type="vehicle_fuel_use",
                 scope=1,
@@ -413,7 +413,7 @@ def calc_vehicle_fuel_emissions(
                 activity_type="vehicle_fuel_use",
                 scope=1,
                 source_id=v_id,
-                source_table="vehicles",
+                source_table="parsed_vehicle_fuel",
                 emissions_kg_co2e=emission_kg,
                 emissions_metric_tons=emission_kg / 1_000.0,
                 factor_used=factor,
@@ -448,14 +448,14 @@ def calc_shipping_emissions(
     Process all rows in the ``shipping`` table and write Scope 3 transportation
     emission records.
 
-    The ``shipping`` table already stores weight in tons and distance in miles
+    The ``parsed_shipping`` table already stores weight in tons and distance in miles
     (converted at ingest time).  Transport mode defaults to 'truck'.
     """
     results: list[EmissionResult] = []
 
     query = """
-        SELECT id, weight_tons, distance_miles, transport_mode, period_start, period_end
-        FROM shipping
+        SELECT parsed_id, weight_tons, distance_miles, transport_mode, period_start, period_end
+        FROM parsed_shipping
         WHERE weight_tons IS NOT NULL AND distance_miles IS NOT NULL
           AND weight_tons > 0 AND distance_miles > 0
     """
@@ -481,7 +481,7 @@ def calc_shipping_emissions(
 
             activity_id = _upsert_activity(
                 conn,
-                parsed_table="shipping",
+                parsed_table="parsed_shipping",
                 parsed_id=sh_id,
                 activity_type="transportation_shipping",
                 scope=3,
@@ -494,7 +494,7 @@ def calc_shipping_emissions(
                 activity_type="transportation_shipping",
                 scope=3,
                 source_id=sh_id,
-                source_table="shipping",
+                source_table="parsed_shipping",
                 emissions_kg_co2e=emission_kg,
                 emissions_metric_tons=emission_kg / 1_000.0,
                 factor_used=factor,
@@ -602,7 +602,7 @@ def calc_water_metrics(
     period_end: str | None = None,
 ) -> dict[str, Any]:
     """
-    Aggregate water consumption from the ``water`` table for the given period
+    Aggregate water consumption from the ``parsed_water`` table for the given period
     and write a summary row to ``water_metrics``.
 
     Volumes reported in gallons (gal) and cubic metres (m³) are kept separate.
@@ -614,8 +614,8 @@ def calc_water_metrics(
     Returns a dict with total_water_gallons, total_water_m3, record_count.
     """
     query = """
-        SELECT id, water_volume, unit, location, period_start, period_end
-        FROM water
+        SELECT parsed_id, water_volume, unit, location, period_start, period_end
+        FROM parsed_water
         WHERE water_volume IS NOT NULL AND water_volume > 0
     """
     params: list[Any] = []
@@ -653,7 +653,7 @@ def calc_water_metrics(
         # Register in activities (non-GHG, scope=None represented as water_usage)
         _upsert_activity(
             conn,
-            parsed_table="water",
+            parsed_table="parsed_water",
             parsed_id=w_id,
             activity_type="water_usage",
             scope=3,          # Reported under Scope 3 for framework alignment
@@ -663,6 +663,21 @@ def calc_water_metrics(
         )
 
     if rows:
+        # Derive effective period bounds from row data when not explicitly provided
+        eff_start = period_start
+        eff_end = period_end
+        if not eff_start:
+            dates = [r[4] for r in rows if r[4] is not None]
+            eff_start = min(dates) if dates else None
+        if not eff_end:
+            dates = [r[5] for r in rows if r[5] is not None]
+            eff_end = max(dates) if dates else None
+        # Final fallback: use today so NOT NULL constraint is satisfied
+        from datetime import date as _date
+        if eff_start is None:
+            eff_start = _date.today()
+        if eff_end is None:
+            eff_end = _date.today()
         with conn.cursor() as cur:
             cur.execute(
                 """
@@ -671,7 +686,7 @@ def calc_water_metrics(
                 VALUES (%s, %s, %s, %s)
                 ON CONFLICT DO NOTHING
                 """,
-                (period_start, period_end, round(total_gallons, 4), "gallon"),
+                (eff_start, eff_end, round(total_gallons, 4), "gallon"),
             )
 
     conn.commit()
@@ -712,7 +727,7 @@ def calc_energy_intensity(
 
     query = """
         SELECT COALESCE(SUM(kwh), 0.0)
-        FROM electricity
+        FROM parsed_electricity
         WHERE kwh IS NOT NULL
     """
     params: list[Any] = []
@@ -730,6 +745,26 @@ def calc_energy_intensity(
     intensity = total_kwh / denominator_value
     intensity_unit = f"kWh/{denominator_type}"
 
+    # Derive effective period bounds from parsed_electricity when not provided
+    eff_start = period_start
+    eff_end = period_end
+    if not eff_start or not eff_end:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT MIN(period_start), MAX(period_end) FROM parsed_electricity "
+                "WHERE kwh IS NOT NULL"
+            )
+            bounds = cur.fetchone()
+            if not eff_start and bounds and bounds[0]:
+                eff_start = bounds[0]
+            if not eff_end and bounds and bounds[1]:
+                eff_end = bounds[1]
+    from datetime import date as _date
+    if eff_start is None:
+        eff_start = _date.today()
+    if eff_end is None:
+        eff_end = _date.today()
+
     with conn.cursor() as cur:
         cur.execute(
             """
@@ -740,8 +775,8 @@ def calc_energy_intensity(
             ON CONFLICT DO NOTHING
             """,
             (
-                period_start,
-                period_end,
+                eff_start,
+                eff_end,
                 round(total_kwh, 4),
                 denominator_type,
                 round(denominator_value, 6),

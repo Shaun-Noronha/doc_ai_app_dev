@@ -127,7 +127,8 @@ CREATE TABLE IF NOT EXISTS activities (
   location       VARCHAR(100),
   period_start   DATE,
   period_end     DATE,
-  created_at     TIMESTAMPTZ DEFAULT NOW()
+  created_at     TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE (parsed_table, parsed_id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_activities_parsed ON activities(parsed_table, parsed_id);

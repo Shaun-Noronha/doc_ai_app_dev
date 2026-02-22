@@ -160,7 +160,7 @@ class TestCalcStationaryFuelEmissions:
              patch("src.calculations.get_stationary_fuel_factor", return_value=10.16):
             results = calc_stationary_fuel_emissions(conn)
 
-        assert results[0].source_table == "stationary_fuel"
+        assert results[0].source_table == "parsed_stationary_fuel"
 
 
 # ─────────────────────────────────────────────────────────────────────────────

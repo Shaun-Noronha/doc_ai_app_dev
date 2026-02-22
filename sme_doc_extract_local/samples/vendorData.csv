@@ -1,0 +1,11 @@
+vendor_id,vendor_name,category,product_or_service,carbon_intensity,sustainability_score,distance_km_from_sme
+V001,GreenLeaf Packaging,Packaging,Recycled cardboard packaging,1.2,82,18
+V002,ClearPack Solutions,Packaging,Plastic packaging materials,5.4,35,210
+V003,EcoRoute Couriers,Logistics,Local last-mile delivery,1.9,78,12
+V004,SwiftHaul Logistics,Logistics,Long-haul ground freight,4.1,48,420
+V005,PureSource Materials,Raw Materials,Sustainably sourced wood,1.5,85,65
+V006,MetalCore Supplies,Raw Materials,Processed metal components,6.8,32,380
+V007,Nordic Office Supplies,Office Supplies,Paper and stationery,2.1,70,95
+V008,BudgetOffice Mart,Office Supplies,Low-cost office consumables,3.9,52,260
+V009,SunGrid Energy,Energy Provider,Renewable electricity supply,0.4,92,25
+V010,UrbanHarvest Foods,Food Supplier,Locally sourced produce,1.3,76,14
