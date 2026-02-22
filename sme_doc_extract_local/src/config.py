@@ -19,12 +19,13 @@ _PACKAGE_ROOT = Path(__file__).resolve().parent.parent
 _PARENT_ROOT = _PACKAGE_ROOT.parent
 
 # Load .env from parent directory first, then package root (package overrides).
+# override=True ensures .env values always win over stale OS-level env vars.
 _env_parent = _PARENT_ROOT / ".env"
 _env_package = _PACKAGE_ROOT / ".env"
 if _env_parent.exists():
-    load_dotenv(_env_parent)
+    load_dotenv(_env_parent, override=True)
 if _env_package.exists():
-    load_dotenv(_env_package, override=False)
+    load_dotenv(_env_package, override=True)
 
 
 @dataclass

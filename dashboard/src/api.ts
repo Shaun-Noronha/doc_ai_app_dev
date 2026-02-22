@@ -1,4 +1,4 @@
-import type { DashboardPayload, KpiData, ScopeEmission, SourceEmission, Recommendation } from './types';
+import type { DashboardPayload, KpiData, ScopeEmission, SourceEmission, Recommendation, UploadResult, ConfirmPayload } from './types';
 
 const BASE = '/api';
 
@@ -24,4 +24,30 @@ export const api = {
   emissionsByScope: () => get<ScopeEmission[]>('/emissions-by-scope'),
   emissionsBySource: () => get<SourceEmission[]>('/emissions-by-source'),
   recommendations: () => get<Recommendation[]>('/recommendations'),
+
+  /** Upload a document file to Doc AI + Gemini extraction. */
+  upload: async (file: File): Promise<UploadResult> => {
+    const form = new FormData();
+    form.append('file', file);
+    const res = await fetch(`${BASE}/upload`, { method: 'POST', body: form });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: `Upload failed: ${res.status}` }));
+      throw new Error((err as { error?: string }).error ?? `Upload failed: ${res.status}`);
+    }
+    return res.json() as Promise<UploadResult>;
+  },
+
+  /** Confirm extracted fields, save to DB, return updated dashboard payload. */
+  confirm: async (payload: ConfirmPayload): Promise<{ ok: boolean; dashboard: DashboardPayload }> => {
+    const res = await fetch(`${BASE}/confirm`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: `Confirm failed: ${res.status}` }));
+      throw new Error((err as { error?: string }).error ?? `Confirm failed: ${res.status}`);
+    }
+    return res.json() as Promise<{ ok: boolean; dashboard: DashboardPayload }>;
+  },
 };

@@ -1,8 +1,10 @@
-import { Activity, Zap, Droplets, Recycle, TrendingDown, Bell, Settings } from 'lucide-react';
+import { useState } from 'react';
+import { Activity, Zap, Droplets, Recycle, TrendingDown, Bell, Settings, FilePlus } from 'lucide-react';
 import KpiCard from '../components/KpiCard';
 import ScopeDonut from '../components/ScopeDonut';
 import ActivitiesRankedList from '../components/ActivitiesRankedList';
 import RecommendationCard from '../components/RecommendationCard';
+import UploadModal from '../components/UploadModal';
 import { useDashboard } from '../hooks/useDashboard';
 
 function SkeletonCard() {
@@ -18,6 +20,7 @@ function SkeletonCard() {
 
 export default function Dashboard() {
   const { kpis, byScope, bySource, recommendations, loading, error, retry } = useDashboard();
+  const [showUpload, setShowUpload] = useState(false);
 
   const today = new Date().toLocaleDateString('en-US', {
     weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
@@ -53,8 +56,17 @@ export default function Dashboard() {
               </button>
             </div>
           )}
-          <button className="w-9 h-9 rounded-xl flex items-center justify-center hover:bg-white/80 transition-all"
-            style={{ color: 'var(--color-text)', boxShadow: 'var(--shadow-card)' }}>
+          {/* Add Document */}
+          <button
+            onClick={() => setShowUpload(true)}
+            className="flex items-center gap-2 px-4 py-2 text-sm font-semibold text-white rounded-xl transition-all hover:opacity-90 active:scale-95"
+            style={{ background: 'linear-gradient(135deg, #059669 0%, #10b981 100%)', boxShadow: '0 2px 8px rgba(5,150,105,0.35)' }}
+          >
+            <FilePlus size={15} />
+            Add Document
+          </button>
+          <button className="w-9 h-9 rounded-xl flex items-center justify-center text-slate-500 hover:text-slate-700 hover:bg-white transition-all"
+            style={{ boxShadow: 'var(--shadow-card)' }}>
             <Bell size={17} />
           </button>
           <button className="w-9 h-9 rounded-xl flex items-center justify-center hover:bg-white/80 transition-all"
@@ -176,6 +188,14 @@ export default function Dashboard() {
           SME Sustainability Pulse · Data sourced from Document AI pipeline · Emission factors: EPA 2023
         </footer>
       </main>
+
+      {/* Upload modal – rendered outside main flow so it overlays everything */}
+      {showUpload && (
+        <UploadModal
+          onClose={() => setShowUpload(false)}
+          onDone={() => { setShowUpload(false); retry(); }}
+        />
+      )}
     </div>
   );
 }

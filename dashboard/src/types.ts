@@ -29,6 +29,50 @@ export interface Recommendation {
 
 export type NavSection = 'dashboard' | 'scope1' | 'scope2' | 'scope3' | 'water';
 
+/** A single field returned by /api/upload for human review */
+export interface ReviewField {
+  key: string;
+  label: string;
+  value: string | number | null;
+  editable: boolean;
+}
+
+/** Response from POST /api/upload */
+export interface UploadResult {
+  doc_type: string;
+  fields: ReviewField[];
+  warnings: string[];
+}
+
+/** Body sent to POST /api/confirm */
+export interface ConfirmPayload {
+  doc_type: string;
+  fields: Record<string, string>;
+  filename: string;
+}
+
+/** A single field returned by /api/upload for human review */
+export interface ReviewField {
+  key: string;
+  label: string;
+  value: string | number | null;
+  editable: boolean;
+}
+
+/** Response from POST /api/upload */
+export interface UploadResult {
+  doc_type: string;
+  fields: ReviewField[];
+  warnings: string[];
+}
+
+/** Body sent to POST /api/confirm */
+export interface ConfirmPayload {
+  doc_type: string;
+  fields: Record<string, string>;
+  filename: string;
+}
+
 export interface DocumentSource {
   document_id: number;
   document_type: string;
