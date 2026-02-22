@@ -1,6 +1,6 @@
 # PostgreSQL schema for document extraction
 
-This directory holds the database schema for persisting output from the SME document extraction pipeline (`out/*/extraction.json`).
+This directory holds the database schema for persisting output from the SME document extraction pipeline (`out/*/extraction.json`). The full relational design (including activities, emissions, and metrics) follows **schemaDocument.docx** (SME Sustainability Pulse – Table & Relationship Reference).
 
 ## Tables
 
@@ -11,8 +11,23 @@ This directory holds the database schema for persisting output from the SME docu
 | **stationary_fuel** | Gas utility bills: fuel_type, quantity, unit, period_start, period_end. |
 | **shipping** | Logistics/delivery docs: weight_tons, distance_miles, transport_mode, period_start, period_end. |
 | **water** | Water bills: water_volume, unit, location, period_start, period_end. |
+| **vehicles** | Vehicle fuel consumption: fuel_type, quantity, unit, period_start, period_end (FK → documents). |
+| **parsed_waste** | Waste records: waste_weight, unit, disposal_method, period (Scope 3). |
+| **activities** | Normalised activity registry; polymorphic link to parsed_* via (parsed_table, parsed_id). |
+| **emissions** | GHG results per activity: emissions_kg_co2e, emissions_metric_tons, factor_used (Metric 01). |
+| **energy_metrics** | Pre-aggregated energy intensity by period (Metric 02). |
+| **water_metrics** | Pre-aggregated water volume by period (Metric 03). |
+| **waste_metrics** | Pre-aggregated waste and diversion rate by period (Metric 03). |
+| **recommendations** | Free-text suggestions linked to activities. |
 
 Category tables reference `documents(id)` via `document_id`. Each document can have at most one row in each category table (`UNIQUE(document_id)`).
+
+## Views
+
+| View | Purpose |
+|------|---------|
+| **activity_emissions_dashboard** | Join of activities, emissions, and recommendations for dashboard queries. |
+| **ghg_totals_by_scope** | Sum of emissions_metric_tons grouped by scope (Scope 1/2/3 breakdown). |
 
 ## Extraction → table mapping
 
