@@ -143,7 +143,7 @@ doc_ai_app_dev/
 ### 1. Clone the repository
 
 ```bash
-git clone <repository-url>
+git clone https://github.com/Shaun-Noronha/doc_ai_app_dev.git
 cd doc_ai_app_dev
 ```
 
