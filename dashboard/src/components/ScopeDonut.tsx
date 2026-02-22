@@ -119,28 +119,26 @@ export default function ScopeDonut({ data, loading }: Props) {
         </div>
       )}
 
-      {/* Scope breakdown rows */}
+      {/* Scope breakdown rows – label (with short explanation) + tonne value only */}
       <div className="flex flex-col gap-2.5 pt-3 border-t" style={{ borderColor: 'rgba(5,74,41,0.12)' }}>
         {data.map((d, i) => {
-          const pct = total > 0 ? ((d.tco2e / total) * 100).toFixed(1) : '0.0';
+          const scopeLabel =
+            d.scope === 'Scope 1'
+              ? 'Scope 1 (Direct – fuel burned on-site and in company vehicles)'
+              : d.scope === 'Scope 2'
+                ? 'Scope 2 (Indirect – purchased electricity, heat, steam, cooling)'
+                : d.scope === 'Scope 3'
+                  ? 'Scope 3 (Value chain – shipping, waste, business travel, etc.)'
+                  : d.label;
           return (
-            <div key={d.scope} className="flex items-center justify-between text-xs" style={{ color: 'var(--color-text)' }}>
+            <div key={d.scope} className="flex items-center justify-between text-xs gap-3" style={{ color: 'var(--color-text)' }}>
               <div className="flex items-center gap-2 min-w-0">
                 <span className="w-3 h-3 rounded-full shrink-0" style={{ background: COLORS[i] }} />
-                <span className="font-medium truncate">{d.label}</span>
+                <span className="font-medium">{scopeLabel}</span>
               </div>
-              <div className="flex items-center gap-3 shrink-0 ml-3">
-                <div className="w-20 h-1.5 rounded-full overflow-hidden" style={{ background: 'rgba(5,74,41,0.15)' }}>
-                  <div
-                    className="h-full rounded-full transition-all duration-700"
-                    style={{ width: `${pct}%`, background: COLORS[i] }}
-                  />
-                </div>
-                <span className="w-8 text-right opacity-80">{pct}%</span>
-                <span className="font-semibold w-16 text-right tabular-nums">
-                  {Number(d.tco2e).toFixed(3)} t
-                </span>
-              </div>
+              <span className="font-semibold shrink-0 text-right tabular-nums">
+                {Number(d.tco2e).toFixed(3)} t
+              </span>
             </div>
           );
         })}

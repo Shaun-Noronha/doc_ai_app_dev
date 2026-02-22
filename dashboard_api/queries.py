@@ -100,6 +100,111 @@ def _cur_query(cur, sql: str, params: tuple = ()) -> list[dict]:
     return [dict(row) for row in cur.fetchall()]
 
 
+def _sparkline_sql() -> str:
+    """Single SQL that UNIONs all five source period/tco2e subqueries and groups by period."""
+    return f"""
+        SELECT to_char(period, 'YYYY-MM') AS period, SUM(tco2e) AS tco2e
+        FROM (
+            SELECT period_start AS period, (kwh * {ELECTRICITY_KG_PER_KWH}) / 1000 AS tco2e
+            FROM parsed_electricity WHERE period_start IS NOT NULL
+            UNION ALL
+            SELECT period_start, ({_stationary_case()}) / 1000 FROM parsed_stationary_fuel WHERE period_start IS NOT NULL
+            UNION ALL
+            SELECT period_start, ({_vehicle_case()}) / 1000 FROM parsed_vehicle_fuel WHERE period_start IS NOT NULL
+            UNION ALL
+            SELECT period_start, ({_shipping_case()}) / 1000 FROM parsed_shipping WHERE period_start IS NOT NULL
+            UNION ALL
+            SELECT period_start, ({_waste_case()}) / 1000 FROM parsed_waste WHERE period_start IS NOT NULL
+        ) u
+        GROUP BY 1 ORDER BY 1
+    """
+
+
+def _run_sparkline(cur) -> list[dict]:
+    """Run the single sparkline query and return [{"period": "YYYY-MM", "tco2e": float}, ...]."""
+    rows = _cur_query(cur, _sparkline_sql())
+    return [{"period": str(row.get("period") or ""), "tco2e": round(float(row.get("tco2e") or 0), 4)} for row in rows if row.get("period")]
+
+
+def get_documents_all() -> list[dict]:
+    """Return all documents that have at least one parsed_* row (same shape as by-scope)."""
+    sql = """
+        SELECT DISTINCT d.document_id, d.document_type, d.source_filename, d.created_at
+        FROM documents d
+        WHERE d.document_id IN (SELECT document_id FROM parsed_electricity)
+           OR d.document_id IN (SELECT document_id FROM parsed_stationary_fuel)
+           OR d.document_id IN (SELECT document_id FROM parsed_vehicle_fuel)
+           OR d.document_id IN (SELECT document_id FROM parsed_shipping)
+           OR d.document_id IN (SELECT document_id FROM parsed_waste)
+           OR d.document_id IN (SELECT document_id FROM parsed_water)
+        ORDER BY d.created_at DESC
+        LIMIT 500
+    """
+    rows = db.query(sql)
+    return [
+        {
+            "document_id": row["document_id"],
+            "document_type": row["document_type"] or "document",
+            "source_filename": row["source_filename"] or "",
+            "created_at": row["created_at"].isoformat() if hasattr(row["created_at"], "isoformat") else str(row["created_at"]),
+        }
+        for row in rows
+    ]
+
+
+def _documents_from_rows(rows: list[dict]) -> list[dict]:
+    """Convert document rows to API shape."""
+    return [
+        {
+            "document_id": row["document_id"],
+            "document_type": row["document_type"] or "document",
+            "source_filename": row["source_filename"] or "",
+            "created_at": row["created_at"].isoformat() if hasattr(row["created_at"], "isoformat") else str(row["created_at"]),
+        }
+        for row in rows
+    ]
+
+
+def get_documents_by_scope(scope: int) -> list[dict]:
+    """
+    Return documents that contribute to the given scope.
+    Uses document_scope view (scope 0=water, 1=fuel, 2=electricity, 3=shipping/waste).
+    Same shape as dashboard documents: document_id, document_type, source_filename, created_at.
+    """
+    if scope not in (0, 1, 2, 3):
+        return []
+    rows = db.query(
+        """
+        SELECT DISTINCT d.document_id, d.document_type, d.source_filename, d.created_at
+        FROM documents d
+        JOIN document_scope ds ON d.document_id = ds.document_id
+        WHERE ds.scope = %s
+        ORDER BY d.created_at DESC
+        LIMIT 500
+        """,
+        (scope,),
+    )
+    return _documents_from_rows(rows)
+
+
+def _documents_by_scope_cur(cur, scope: int) -> list[dict]:
+    """Run documents-by-scope query on the given cursor (uses document_scope view)."""
+    if scope not in (0, 1, 2, 3):
+        return []
+    cur.execute(
+        """
+        SELECT DISTINCT d.document_id, d.document_type, d.source_filename, d.created_at
+        FROM documents d
+        JOIN document_scope ds ON d.document_id = ds.document_id
+        WHERE ds.scope = %s
+        ORDER BY d.created_at DESC
+        LIMIT 500
+        """,
+        (scope,),
+    )
+    return _documents_from_rows([dict(r) for r in cur.fetchall()])
+
+
 def build_dashboard_payload(conn) -> dict:
     """
     Build full dashboard payload (kpis, emissions_by_scope, emissions_by_source,
@@ -152,19 +257,8 @@ def build_dashboard_payload(conn) -> dict:
         scope_3_tco2e = round(ship_tco2e + waste_tco2e, 4)
         water_volume_gallons = round(water_m3 * 264.172, 2) if water_m3 else 0.0
 
-        # Sparkline / monthly tCO2e
-        results = {}
-        for sql in [
-            f"SELECT to_char(period_start, 'YYYY-MM') AS period, SUM(kwh * {ELECTRICITY_KG_PER_KWH}) / 1000 AS tco2e FROM parsed_electricity WHERE period_start IS NOT NULL GROUP BY 1",
-            f"SELECT to_char(period_start, 'YYYY-MM') AS period, SUM({_stationary_case()}) / 1000 AS tco2e FROM parsed_stationary_fuel WHERE period_start IS NOT NULL GROUP BY 1",
-            f"SELECT to_char(period_start, 'YYYY-MM') AS period, SUM({_vehicle_case()}) / 1000 AS tco2e FROM parsed_vehicle_fuel WHERE period_start IS NOT NULL GROUP BY 1",
-            f"SELECT to_char(period_start, 'YYYY-MM') AS period, SUM({_shipping_case()}) / 1000 AS tco2e FROM parsed_shipping WHERE period_start IS NOT NULL GROUP BY 1",
-            f"SELECT to_char(period_start, 'YYYY-MM') AS period, SUM({_waste_case()}) / 1000 AS tco2e FROM parsed_waste WHERE period_start IS NOT NULL GROUP BY 1",
-        ]:
-            for row in _cur_query(cur, sql):
-                period = str(row.get("period") or "")
-                results[period] = results.get(period, 0.0) + float(row.get("tco2e") or 0)
-        sparkline = [{"period": k, "tco2e": round(v, 4)} for k, v in sorted(results.items()) if k]
+        # Sparkline / monthly tCO2e (single query)
+        sparkline = _run_sparkline(cur)
 
         # Documents that contributed data (have at least one parsed_* row)
         doc_rows = _cur_query(
@@ -281,6 +375,73 @@ def refresh_snapshot() -> None:
         conn.commit()
 
     db.with_connection(do_refresh)
+
+
+def get_scope_payload(scope: int) -> dict:
+    """
+    Lightweight payload for Scope 1, 2, or 3 view: scopeTotal, bySource, sparkline, documents.
+    Uses 3-5 targeted queries instead of full dashboard build.
+    """
+    if scope not in (1, 2, 3):
+        return {"scopeTotal": 0.0, "bySource": [], "sparkline": [], "documents": []}
+
+    def _build(conn):
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            if scope == 1:
+                stat_tco2e = float(_cur_scalar(cur, f"SELECT COALESCE(SUM({_stationary_case()}) / 1000, 0) FROM parsed_stationary_fuel") or 0)
+                veh_tco2e = float(_cur_scalar(cur, f"SELECT COALESCE(SUM({_vehicle_case()}) / 1000, 0) FROM parsed_vehicle_fuel") or 0)
+                scope_total = round(stat_tco2e + veh_tco2e, 4)
+                by_source = [
+                    {"source": "Stationary Fuel", "scope": 1, "tco2e": round(stat_tco2e, 4)},
+                    {"source": "Vehicle Fuel", "scope": 1, "tco2e": round(veh_tco2e, 4)},
+                ]
+                by_source = sorted(by_source, key=lambda x: x["tco2e"], reverse=True)
+            elif scope == 2:
+                elec_tco2e = float(_cur_scalar(cur, f"SELECT COALESCE(SUM(kwh * {ELECTRICITY_KG_PER_KWH}) / 1000, 0) FROM parsed_electricity") or 0)
+                scope_total = round(elec_tco2e, 4)
+                by_source = [{"source": "Electricity", "scope": 2, "tco2e": round(elec_tco2e, 4)}]
+            else:  # scope == 3
+                ship_tco2e = float(_cur_scalar(cur, f"SELECT COALESCE(SUM({_shipping_case()}) / 1000, 0) FROM parsed_shipping") or 0)
+                waste_tco2e = float(_cur_scalar(cur, f"SELECT COALESCE(SUM({_waste_case()}) / 1000, 0) FROM parsed_waste") or 0)
+                scope_total = round(ship_tco2e + waste_tco2e, 4)
+                by_source = [
+                    {"source": "Shipping", "scope": 3, "tco2e": round(ship_tco2e, 4)},
+                    {"source": "Waste", "scope": 3, "tco2e": round(waste_tco2e, 4)},
+                ]
+                by_source = sorted(by_source, key=lambda x: x["tco2e"], reverse=True)
+
+            sparkline = _run_sparkline(cur)
+            documents = _documents_by_scope_cur(cur, scope)
+            return {
+                "scopeTotal": scope_total,
+                "bySource": by_source,
+                "sparkline": sparkline,
+                "documents": documents,
+            }
+
+    return db.with_connection(_build)
+
+
+def get_water_payload() -> dict:
+    """
+    Lightweight payload for Water view: water_usage, sparkline, documents.
+    Uses 3 queries only.
+    """
+    def _build(conn):
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            water_rows = _cur_query(cur, "SELECT water_volume, unit FROM parsed_water WHERE water_volume IS NOT NULL")
+            water_m3 = 0.0
+            for row in water_rows:
+                vol = float(row["water_volume"] or 0)
+                water_m3 += vol * GALLON_TO_M3 if row["unit"] == "gallon" else vol
+            water_volume_gallons = round(water_m3 * 264.172, 2) if water_m3 else 0.0
+            water_usage = {"volume_m3": round(water_m3, 4), "volume_gallons": water_volume_gallons}
+
+            sparkline = _run_sparkline(cur)
+            documents = _documents_by_scope_cur(cur, 0)
+            return {"water_usage": water_usage, "sparkline": sparkline, "documents": documents}
+
+    return db.with_connection(_build)
 
 
 def _make_json_serializable(obj):

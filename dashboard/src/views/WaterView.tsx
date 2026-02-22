@@ -2,10 +2,10 @@ import { Droplets } from 'lucide-react';
 import SectionLayout from './SectionLayout';
 import DataSourcesList from '../components/DataSourcesList';
 import MonthlyTco2BarChart from '../components/MonthlyTco2BarChart';
-import { useDashboard } from '../hooks/useDashboard';
+import { useWater } from '../hooks/useWater';
 
 export default function WaterView() {
-  const { kpis, metrics, documents, loading } = useDashboard();
+  const { water_usage, sparkline, documents, loading } = useWater();
 
   return (
     <SectionLayout
@@ -20,7 +20,7 @@ export default function WaterView() {
             <div className="h-10 w-20 rounded-lg bg-slate-200 animate-pulse mt-2" />
           ) : (
             <p className="text-2xl font-bold mt-1" style={{ color: 'var(--color-text)' }}>
-              {(metrics?.water_usage?.volume_m3 ?? 0).toFixed(1)} <span className="text-base font-semibold opacity-70">m³</span>
+              {water_usage.volume_m3.toFixed(1)} <span className="text-base font-semibold opacity-70">m³</span>
             </p>
           )}
         </div>
@@ -30,14 +30,14 @@ export default function WaterView() {
             <div className="h-10 w-24 rounded-lg bg-slate-200 animate-pulse mt-2" />
           ) : (
             <p className="text-2xl font-bold mt-1" style={{ color: 'var(--color-text)' }}>
-              {((metrics?.water_usage?.volume_gallons) ?? 0).toLocaleString(undefined, { maximumFractionDigits: 0 })} <span className="text-base font-semibold opacity-70">gal</span>
+              {water_usage.volume_gallons.toLocaleString(undefined, { maximumFractionDigits: 0 })} <span className="text-base font-semibold opacity-70">gal</span>
             </p>
           )}
         </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-stretch">
-        <MonthlyTco2BarChart data={kpis?.sparkline ?? []} loading={loading} />
+        <MonthlyTco2BarChart data={sparkline} loading={loading} />
         <DataSourcesList documents={documents} loading={loading} />
       </div>
     </SectionLayout>

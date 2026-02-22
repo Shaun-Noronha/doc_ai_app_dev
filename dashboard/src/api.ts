@@ -1,4 +1,4 @@
-import type { DashboardPayload, KpiData, ScopeEmission, SourceEmission, Recommendation, UploadResult, ConfirmPayload } from './types';
+import type { DashboardPayload, KpiData, ScopeEmission, SourceEmission, Recommendation, DocumentSource, ScopePayload, WaterPayload, UploadResult, ConfirmPayload } from './types';
 
 const BASE = '/api';
 
@@ -24,6 +24,16 @@ export const api = {
   emissionsByScope: () => get<ScopeEmission[]>('/emissions-by-scope'),
   emissionsBySource: () => get<SourceEmission[]>('/emissions-by-source'),
   recommendations: () => get<Recommendation[]>('/recommendations'),
+
+  /** Documents that contributed data; optional scope 0 (water), 1, 2, or 3 for scope-specific sources. */
+  documents: (scope?: number): Promise<DocumentSource[]> =>
+    scope != null ? get<DocumentSource[]>(`/documents?scope=${scope}`) : get<DocumentSource[]>('/documents'),
+
+  /** Lightweight payload for Scope 1, 2, or 3 view (scopeTotal, bySource, sparkline, documents). */
+  scopePayload: (scope: 1 | 2 | 3) => get<ScopePayload>(`/scope/${scope}`),
+
+  /** Lightweight payload for Water view (water_usage, sparkline, documents). */
+  waterPayload: () => get<WaterPayload>('/water'),
 
   /** Upload a document file to Doc AI + Gemini extraction. */
   upload: async (file: File): Promise<UploadResult> => {

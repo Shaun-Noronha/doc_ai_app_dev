@@ -27,14 +27,13 @@ export default function Sidebar({ active, onNav }: Props) {
       style={{ background: 'var(--color-sidebar)' }}
       className="fixed inset-y-0 left-0 w-[72px] hover:w-60 overflow-hidden transition-all duration-300 z-50 flex flex-col gap-1 pt-6 pb-8 group"
     >
-      {/* Logo */}
+      {/* Logo + greeting */}
       <div className="flex items-center gap-3 px-4 mb-8">
         <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0" style={{ background: 'var(--color-emerald)' }}>
           <Leaf size={18} color="white" />
         </div>
         <span className="text-white font-semibold text-sm whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity duration-200">
-          Sustainability<br />
-          <span className="text-emerald-400 font-bold">Pulse</span>
+          Hi, Lindsey!
         </span>
       </div>
 

@@ -102,6 +102,40 @@ def emissions_by_source():
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
+@app.get("/api/scope/{scope}", summary="Lightweight payload for Scope 1, 2, or 3 view")
+def get_scope(scope: int):
+    """Returns scopeTotal, bySource, sparkline, documents for the given scope (1, 2, or 3)."""
+    if scope not in (1, 2, 3):
+        raise HTTPException(status_code=400, detail="scope must be 1, 2, or 3")
+    try:
+        return queries.get_scope_payload(scope)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.get("/api/water", summary="Lightweight payload for Water view")
+def get_water():
+    """Returns water_usage, sparkline, documents. Fast, 3 queries only."""
+    try:
+        return queries.get_water_payload()
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.get("/api/documents", summary="Documents (optionally by scope)")
+def get_documents(scope: int | None = None):
+    """
+    Return documents that contributed data. If scope is 1, 2, or 3,
+    return only documents for that scope (Scope 1: fuel; 2: electricity; 3: shipping/waste).
+    """
+    try:
+        if scope is not None and scope in (0, 1, 2, 3):
+            return queries.get_documents_by_scope(scope)
+        return queries.get_documents_all()
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
 @app.get("/api/recommendations", summary="AI improvement recommendations")
 def api_recommendations():
     """

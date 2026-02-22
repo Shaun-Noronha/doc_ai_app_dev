@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Activity, Zap, Droplets, Recycle, TrendingDown, Bell, Settings, FilePlus } from 'lucide-react';
 import KpiCard from '../components/KpiCard';
 import ScopeDonut from '../components/ScopeDonut';
-import ActivitiesRankedList from '../components/ActivitiesRankedList';
+import MonthlyTco2BarChart from '../components/MonthlyTco2BarChart';
 import RecommendationCard from '../components/RecommendationCard';
 import UploadModal from '../components/UploadModal';
 import { useDashboard } from '../hooks/useDashboard';
@@ -37,7 +37,7 @@ export default function Dashboard() {
         }}
       >
         <div>
-          <h1 className="text-xl font-bold" style={{ color: 'var(--color-text)' }}>Sustainability Dashboard</h1>
+          <h1 className="text-xl font-bold" style={{ color: 'var(--color-text)' }}>Sip Happens</h1>
           <p className="text-xs mt-0.5 opacity-70" style={{ color: 'var(--color-text)' }}>{today}</p>
         </div>
         <div className="flex items-center gap-3">
@@ -144,13 +144,13 @@ export default function Dashboard() {
           )}
         </div>
 
-        {/* ── Charts row ──────────────────────────────────── */}
+        {/* ── Charts row: Scope donut + Monthly analysis (date filter) ───── */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-stretch">
           <div style={{ minHeight: '420px' }}>
             <ScopeDonut data={byScope} loading={loading} />
           </div>
           <div style={{ minHeight: '420px' }}>
-            <ActivitiesRankedList data={bySource} loading={loading} />
+            <MonthlyTco2BarChart data={kpis?.sparkline ?? []} loading={loading} />
           </div>
         </div>
 
@@ -162,8 +162,8 @@ export default function Dashboard() {
               <TrendingDown size={16} color="white" />
             </div>
             <div>
-              <h2 className="text-sm font-bold uppercase tracking-widest" style={{ color: 'var(--color-text)' }}>AI Recommendations</h2>
-              <p className="text-xs opacity-70" style={{ color: 'var(--color-text)' }}>Actionable improvements based on your sustainability data</p>
+              <h2 className="text-sm font-bold uppercase tracking-widest" style={{ color: 'var(--color-text)' }}>Recommended Actions</h2>
+              <p className="text-xs opacity-70" style={{ color: 'var(--color-text)' }}>Realistic ways to grow your sustainability</p>
             </div>
           </div>
 
