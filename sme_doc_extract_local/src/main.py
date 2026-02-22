@@ -23,6 +23,8 @@ on the initial OCR output — no manual override is supported.
 from __future__ import annotations
 
 import argparse
+import json
+import os
 import sys
 import time
 import traceback
@@ -36,6 +38,8 @@ from rich.table import Table
 
 from src.classify import classify_doc_with_scores
 from src.config import get_config
+import src.config  # noqa: F401 – load .env for ingest
+from src.db import apply_schema, get_connection, insert_category, insert_document, test_connection
 from src.constants import (
     DOC_TYPE_DELIVERY_RECEIPT,
     DOC_TYPE_INVOICE,
@@ -441,6 +445,93 @@ def cmd_batch(args: argparse.Namespace) -> int:
     return 0 if failed == 0 else 1
 
 
+def cmd_ingest(args: argparse.Namespace) -> int:
+    """Handle: python -m src.main ingest --outdir out. Load extraction.json files into the database."""
+    database_url = os.environ.get("DATABASE_URL")
+    if not database_url:
+        console.print(
+            "[red]Error:[/] DATABASE_URL is not set. Set it in .env or the environment."
+        )
+        return 1
+
+    outdir = Path(args.outdir)
+    if not outdir.exists():
+        console.print(f"[red]Error:[/] Outdir not found: {outdir}")
+        return 1
+
+    files = sorted(outdir.rglob("extraction.json"))
+    if not files:
+        console.print(f"[yellow]Warning:[/] No extraction.json files found under {outdir}")
+        return 0
+
+    console.print(
+        Panel(
+            f"[bold]Ingesting[/]: {len(files)} extraction.json file(s) from [italic]{outdir}[/]",
+            style="blue",
+        )
+    )
+
+    inserted = 0
+    failed = 0
+    conn = get_connection(database_url)
+    try:
+        for path in files:
+            try:
+                payload = json.loads(path.read_text(encoding="utf-8"))
+                doc_id = insert_document(conn, payload)
+                insert_category(conn, doc_id, payload)
+                conn.commit()
+                inserted += 1
+                if args.verbose:
+                    console.print(f"  [green]✓[/] {path.relative_to(outdir)} → document id {doc_id}")
+            except Exception as exc:  # noqa: BLE001
+                conn.rollback()
+                failed += 1
+                console.print(f"  [red]✗[/] {path}: {exc}")
+                if args.verbose:
+                    console.print(traceback.format_exc())
+    finally:
+        conn.close()
+
+    console.print(
+        f"[bold]Done.[/] Inserted: [green]{inserted}[/], failed: [red]{failed}[/]"
+    )
+    return 0 if failed == 0 else 1
+
+
+def cmd_test_db(_args: argparse.Namespace) -> int:
+    """Handle: python -m src.main test-db. Verify PostgreSQL connection (DATABASE_URL)."""
+    database_url = os.environ.get("DATABASE_URL")
+    if not database_url:
+        console.print(
+            "[red]Error:[/] DATABASE_URL is not set. Set it in .env or the environment."
+        )
+        return 1
+    ok, err = test_connection(database_url)
+    if ok:
+        console.print("[green]PostgreSQL connection OK.[/]")
+        return 0
+    console.print(f"[red]PostgreSQL connection failed:[/] {err}")
+    return 1
+
+
+def cmd_init_db(_args: argparse.Namespace) -> int:
+    """Handle: python -m src.main init-db. Apply schema (documents + category tables) to PostgreSQL."""
+    database_url = os.environ.get("DATABASE_URL")
+    if not database_url:
+        console.print(
+            "[red]Error:[/] DATABASE_URL is not set. Set it in .env or the environment."
+        )
+        return 1
+    console.print("[cyan]Applying schema (schema/documents.sql) …[/]")
+    ok, err = apply_schema(database_url)
+    if ok:
+        console.print("[green]Schema applied successfully.[/]")
+        return 0
+    console.print(f"[red]Schema apply failed:[/] {err}")
+    return 1
+
+
 def _print_result_table(results: list[dict]) -> None:
     """Render a rich summary table of processing results."""
     table = Table(title="Extraction Results", show_lines=True)
@@ -529,6 +620,35 @@ def build_parser() -> argparse.ArgumentParser:
     )
     _build_shared_args(p_batch)
 
+    # ── ingest (load extraction.json into database) ──────────────
+    p_ingest = sub.add_parser(
+        "ingest",
+        help="Load extraction.json files from an outdir into the database (requires DATABASE_URL).",
+    )
+    p_ingest.add_argument(
+        "--outdir",
+        default="out",
+        help="Root output directory containing extraction.json files (default: out)",
+    )
+    p_ingest.add_argument(
+        "--verbose",
+        action="store_true",
+        default=False,
+        help="Print each file as it is ingested",
+    )
+
+    # ── test-db (verify PostgreSQL connection) ───────────────────
+    sub.add_parser(
+        "test-db",
+        help="Test PostgreSQL connection using DATABASE_URL.",
+    )
+
+    # ── init-db (apply schema to PostgreSQL) ──────────────────────
+    sub.add_parser(
+        "init-db",
+        help="Apply schema (documents + category tables) to the database. Requires DATABASE_URL.",
+    )
+
     return root
 
 
@@ -541,7 +661,13 @@ def main() -> None:
     parser = build_parser()
     args = parser.parse_args()
 
-    dispatch = {"process": cmd_process, "batch": cmd_batch}
+    dispatch = {
+        "process": cmd_process,
+        "batch": cmd_batch,
+        "ingest": cmd_ingest,
+        "test-db": cmd_test_db,
+        "init-db": cmd_init_db,
+    }
     handler = dispatch.get(args.command)
     if handler is None:
         parser.print_help()

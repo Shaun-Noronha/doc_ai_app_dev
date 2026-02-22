@@ -39,6 +39,7 @@ class Config:
     docai_form_processor_id: str
     gemini_api_key: str
     gemini_model: str = "gemini-2.5-flash"
+    database_url: str | None = None
 
     # Derived – full processor resource names
     docai_invoice_processor_name: str = field(init=False)
@@ -108,6 +109,8 @@ def get_config(gemini_model: str | None = None) -> Config:
 
     if gemini_model:
         cfg.gemini_model = gemini_model
+
+    cfg.database_url = os.environ.get("DATABASE_URL")
 
     # Resolve relative credentials path so it works regardless of cwd.
     creds = cfg.google_application_credentials
