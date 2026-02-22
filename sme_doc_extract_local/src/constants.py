@@ -69,6 +69,11 @@ CLASSIFIER_PATTERNS = {
     },
 }
 
+# ── Classifier threshold ──────────────────────────────────────
+# Minimum number of keyword hits required to accept a classification.
+# Increase to require stronger evidence; 1 means any single keyword hit wins.
+CLASSIFIER_MIN_HITS = 1
+
 # ── Gemini defaults ───────────────────────────────────────────
 DEFAULT_GEMINI_MODEL = "gemini-2.5-flash"
 GEMINI_MAX_RETRIES = 3
@@ -85,6 +90,9 @@ CONFIDENCE_MISSING = 0.0
 
 # ── Allowed logistics modes ───────────────────────────────────
 LOGISTICS_ALLOWED_MODES = {"truck", "air", "sea", "rail"}
+
+# ── Allowed utility bill types ────────────────────────────────
+UTILITY_ALLOWED_TYPES = {"gas", "water", "electricity", "other"}
 
 # ── Output file names ─────────────────────────────────────────
 OUT_RAW_TEXT = "raw_text.txt"
