@@ -1,0 +1,35 @@
+{
+  "source_file": "C:\\Users\\shaun\\Desktop\\Shauun\\Hackathon\\sme_doc_extract_local\\samples\\multiple_image_2.png",
+  "doc_type": "logistics",
+  "extraction_method": "document_ai + gemini",
+  "extraction": {
+    "shipment_id": "4684",
+    "date": "2019-05-06",
+    "carrier": null,
+    "mode": null,
+    "origin": {
+      "city": "St. Louis",
+      "state": "Missouri",
+      "country": "United States"
+    },
+    "destination": {
+      "city": "Aubagne",
+      "state": null,
+      "country": "France"
+    },
+    "distance_km": null,
+    "weight_kg": 2.44039056,
+    "packages_count": 1
+  },
+  "confidence": {
+    "shipment_id": 0.7,
+    "carrier": 0.0,
+    "mode": 0.0,
+    "origin": 0.7,
+    "destination": 0.7,
+    "distance_km": 0.0,
+    "weight_kg": 0.7
+  },
+  "warnings": [],
+  "created_at": "2026-02-21T20:41:58.919332+00:00"
+}

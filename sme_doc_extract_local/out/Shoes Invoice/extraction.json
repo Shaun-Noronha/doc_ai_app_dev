@@ -1,0 +1,33 @@
+{
+  "source_file": "C:\\Users\\shaun\\Desktop\\Shauun\\Hackathon\\sme_doc_extract_local\\samples\\Shoes Invoice.pdf",
+  "doc_type": "invoice",
+  "extraction_method": "document_ai + gemini",
+  "extraction": {
+    "vendor_name": "Amazon.com",
+    "invoice_number": "113-4756171-4300260",
+    "invoice_date": "2025-12-04",
+    "due_date": null,
+    "currency": "USD",
+    "subtotal": 54.94,
+    "tax": 0.0,
+    "total": 54.94,
+    "line_items": [
+      {
+        "description": "New Balance Men's DynaSoft Nitrel V6 Trail Running Shoe, Castlerock/Black/Sienna, 8 M",
+        "quantity": 1.0,
+        "unit_price": 54.94,
+        "total_price": 54.94
+      }
+    ]
+  },
+  "confidence": {
+    "vendor_name": 0.7,
+    "invoice_number": 0.7,
+    "invoice_date": 0.7,
+    "subtotal": 0.7,
+    "tax": 0.7,
+    "total": 0.7
+  },
+  "warnings": [],
+  "created_at": "2026-02-21T20:23:21.945640+00:00"
+}

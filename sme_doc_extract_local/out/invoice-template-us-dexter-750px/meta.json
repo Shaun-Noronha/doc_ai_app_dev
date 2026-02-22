@@ -1,0 +1,18 @@
+{
+  "source_file": "C:\\Users\\shaun\\Desktop\\Shauun\\Hackathon\\sme_doc_extract_local\\samples\\invoice-template-us-dexter-750px.png",
+  "status": "success",
+  "doc_type": "invoice",
+  "processor": "projects/n8nproject-478016/locations/us/processors/8da6fa2bc0d44f73",
+  "gemini_model": "gemini-2.5-flash",
+  "page_count": 1,
+  "elapsed_seconds": 9.917,
+  "created_at": "2026-02-21T20:41:35.981910+00:00",
+  "confidence_summary": {
+    "vendor_name": 0.7,
+    "invoice_number": 0.7,
+    "invoice_date": 0.7,
+    "subtotal": 0.7,
+    "tax": 0.7,
+    "total": 0.7
+  }
+}
