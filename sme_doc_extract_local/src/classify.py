@@ -7,6 +7,7 @@ explicitly passes --doc-type, this module is bypassed entirely.
 from __future__ import annotations
 
 from src.constants import (
+    CLASSIFIER_MIN_HITS,
     CLASSIFIER_PATTERNS,
     DOC_TYPE_DELIVERY_RECEIPT,
     DOC_TYPE_INVOICE,
@@ -55,7 +56,7 @@ def classify_doc(text: str) -> str:
         return DOC_TYPE_UNKNOWN
 
     best_type = max(scores, key=scores.__getitem__)
-    if scores[best_type] == 0:
+    if scores[best_type] < CLASSIFIER_MIN_HITS:
         return DOC_TYPE_UNKNOWN
 
     return best_type
@@ -81,5 +82,5 @@ def classify_doc_with_scores(text: str) -> tuple[str, dict[str, int]]:
         return DOC_TYPE_UNKNOWN, {}
 
     best_type = max(scores, key=scores.__getitem__)
-    result = best_type if scores[best_type] > 0 else DOC_TYPE_UNKNOWN
+    result = best_type if scores[best_type] >= CLASSIFIER_MIN_HITS else DOC_TYPE_UNKNOWN
     return result, scores

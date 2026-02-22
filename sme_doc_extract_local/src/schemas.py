@@ -60,10 +60,14 @@ class UtilitySchema(BaseModel):
 
     provider: Optional[str] = Field(None, description="Utility company name")
     account_id: Optional[str] = Field(None, description="Customer / account number")
+    location: Optional[str] = Field(None, description="Service or billing location as City, State")
+    utility_type: Optional[str] = Field(None, description="Type of utility: gas, water, electricity, or other")
     billing_period_start: Optional[str] = Field(None, description="Billing period start YYYY-MM-DD")
     billing_period_end: Optional[str] = Field(None, description="Billing period end YYYY-MM-DD")
     electricity_kwh: Optional[float] = Field(None, description="Electricity usage in kWh")
     natural_gas_therms: Optional[float] = Field(None, description="Natural gas usage in therms")
+    water_volume: Optional[float] = Field(None, description="Water usage volume (for water bills)")
+    water_unit: Optional[str] = Field(None, description="Unit for water_volume, e.g. gal, m³, ccf")
     total_amount: Optional[float] = Field(None, description="Total amount due")
     currency: Optional[str] = Field(None, description="ISO 4217 currency code")
 

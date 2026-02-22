@@ -1,0 +1,7 @@
+FROM postgis/postgis:18-3.6
+
+ENV POSTGRES_USER=postgres
+ENV POSTGRES_PASSWORD=postgres
+ENV POSTGRES_DB=mydb
+
+EXPOSE 5432

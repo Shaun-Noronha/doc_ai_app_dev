@@ -27,6 +27,7 @@ from src.constants import (
     CONFIDENCE_PRESENT_VALID,
     INVOICE_TOTAL_TOLERANCE,
     LOGISTICS_ALLOWED_MODES,
+    UTILITY_ALLOWED_TYPES,
 )
 
 
@@ -171,8 +172,33 @@ def validate_utility(
     conf: dict[str, float] = {}
     d = dict(raw)
 
+    # -- Location (city, state) --
+    loc = d.get("location")
+    d["location"] = loc.strip() if isinstance(loc, str) and loc else None
+
+    # -- Utility type (gas, water, electricity, other) --
+    utility_type = d.get("utility_type")
+    utility_type_valid = True
+    if utility_type is not None:
+        ut_lower = str(utility_type).lower().strip()
+        if ut_lower in UTILITY_ALLOWED_TYPES:
+            d["utility_type"] = ut_lower
+        else:
+            warnings.append(
+                f"utility_type '{utility_type}' is not allowed; expected one of "
+                f"{sorted(UTILITY_ALLOWED_TYPES)}. Setting null."
+            )
+            d["utility_type"] = None
+            utility_type_valid = False
+    else:
+        d["utility_type"] = None
+
+    # -- Water unit (strip string) --
+    wu = d.get("water_unit")
+    d["water_unit"] = wu.strip() if isinstance(wu, str) and wu else None
+
     # -- Numeric fields --
-    for field in ("electricity_kwh", "natural_gas_therms", "total_amount"):
+    for field in ("electricity_kwh", "natural_gas_therms", "water_volume", "total_amount"):
         d[field] = _to_float(d.get(field))
 
     # -- Date fields --
@@ -202,12 +228,21 @@ def validate_utility(
     if therms is not None and therms < 0:
         warnings.append(f"natural_gas_therms is negative ({therms})")
 
+    water_vol = d.get("water_volume")
+    water_volume_valid = water_vol is None or water_vol >= 0
+    if water_vol is not None and water_vol < 0:
+        warnings.append(f"water_volume is negative ({water_vol})")
+
     # -- Confidence --
     conf["provider"] = _confidence(d.get("provider"), True)
     conf["account_id"] = _confidence(d.get("account_id"), True)
+    conf["location"] = _confidence(d.get("location"), True)
+    conf["utility_type"] = _confidence(d.get("utility_type"), utility_type_valid)
     conf["billing_period_start"] = _confidence(start, period_valid and start is not None)
     conf["billing_period_end"] = _confidence(end, period_valid and end is not None)
     conf["electricity_kwh"] = _confidence(kwh, kwh is None or kwh >= 0)
+    conf["water_volume"] = _confidence(water_vol, water_volume_valid)
+    conf["water_unit"] = _confidence(d.get("water_unit"), True)
     conf["total_amount"] = _confidence(d.get("total_amount"), True)
 
     return d, warnings, conf

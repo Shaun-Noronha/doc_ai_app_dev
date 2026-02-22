@@ -12,12 +12,13 @@ Process a directory:
 
 Common options:
     --outdir "out/"
-    --doc-type invoice|receipt|delivery_receipt|utility_bill|utility|logistics|auto
     --max-pages N (PDFs only)
     --gemini-model "gemini-2.5-flash"
     --verbose
-    
-Note: docai.json is saved by default for debugging (always included)
+
+Note: docai.json is saved by default for debugging (always included).
+Document type is always determined automatically via keyword classification
+on the initial OCR output — no manual override is supported.
 """
 from __future__ import annotations
 
@@ -36,14 +37,13 @@ from rich.table import Table
 from src.classify import classify_doc_with_scores
 from src.config import get_config
 from src.constants import (
-    AUTO_CLASSIFY,
     DOC_TYPE_DELIVERY_RECEIPT,
-    DOC_TYPE_UNKNOWN,
-    DOC_TYPE_RECEIPT,
-    DOC_TYPE_UTILITY_BILL,
-    DOC_TYPE_UTILITY,
-    DOC_TYPE_LOGISTICS,
     DOC_TYPE_INVOICE,
+    DOC_TYPE_RECEIPT,
+    DOC_TYPE_UNKNOWN,
+    DOC_TYPE_UTILITY,
+    DOC_TYPE_UTILITY_BILL,
+    DOC_TYPE_LOGISTICS,
     DEFAULT_GEMINI_MODEL,
 )
 from src.docai_client import build_client, process_pdf
@@ -64,7 +64,7 @@ console = Console()
 
 
 # ─────────────────────────────────────────────────────────────
-# Core pipeline
+# Core pipeline helpers
 # ─────────────────────────────────────────────────────────────
 
 def _docai_to_serialisable(document: Any) -> dict:
@@ -87,10 +87,30 @@ def _docai_to_serialisable(document: Any) -> dict:
 
 
 _EXTRACTOR_MAP = {
-    "invoice": extract_invoice,
-    "utility": extract_utility,
-    "logistics": extract_logistics,
+    DOC_TYPE_INVOICE:  extract_invoice,
+    DOC_TYPE_UTILITY:  extract_utility,
+    DOC_TYPE_LOGISTICS: extract_logistics,
 }
+
+# Maps each classified doc type to the most accurate Document AI processor.
+# invoice  → Invoice Parser  (structured entity extraction)
+# receipt  → Receipt Parser  (structured entity extraction)
+# delivery_receipt / utility_bill → Form Parser (generic OCR)
+# unknown  → Form Parser (fallback)
+_PROCESSOR_MAP: dict[str, Any] = {
+    DOC_TYPE_INVOICE:          lambda cfg: cfg.docai_invoice_processor_name,
+    DOC_TYPE_RECEIPT:          lambda cfg: cfg.docai_receipt_processor_name,
+    DOC_TYPE_DELIVERY_RECEIPT: lambda cfg: cfg.docai_form_processor_name,
+    DOC_TYPE_UTILITY_BILL:     lambda cfg: cfg.docai_form_processor_name,
+}
+
+
+def _processor_for_doc_type(doc_type: str, config: Any) -> str:
+    """Return the Document AI processor resource name for *doc_type*."""
+    getter = _PROCESSOR_MAP.get(doc_type)
+    if getter is not None:
+        return getter(config)
+    return config.docai_form_processor_name
 
 
 def _doc_type_for_extraction(doc_type: str) -> str:
@@ -104,34 +124,58 @@ def _doc_type_for_extraction(doc_type: str) -> str:
     return doc_type
 
 
-def _processor_for_doc_type(doc_type: str, config: Any) -> str:
-    """Select the Document AI processor name for the classified doc type."""
-    if doc_type == DOC_TYPE_INVOICE:
-        return config.docai_invoice_processor_name
-    if doc_type == DOC_TYPE_RECEIPT:
-        return config.docai_receipt_processor_name
-    if doc_type in (DOC_TYPE_DELIVERY_RECEIPT, DOC_TYPE_UTILITY_BILL):
-        return config.docai_form_processor_name
-    if doc_type == DOC_TYPE_UTILITY:
-        return config.docai_form_processor_name
-    if doc_type == DOC_TYPE_LOGISTICS:
-        return config.docai_form_processor_name
-    return config.docai_form_processor_name
+def _call_docai(
+    pdf_path: Path,
+    processor_name: str,
+    config: Any,
+    client: Any,
+    max_pages: int | None,
+) -> Any | None:
+    """
+    Call Document AI and return the Document object.
 
+    Returns ``None`` on failure and prints an error to the console.
+    """
+    try:
+        return process_pdf(
+            pdf_path=pdf_path,
+            config=config,
+            client=client,
+            processor_name=processor_name,
+            max_pages=max_pages,
+        )
+    except Exception as exc:  # noqa: BLE001
+        console.print(f"  [red]✗[/] Document AI failed: {exc}")
+        return None
+
+
+# ─────────────────────────────────────────────────────────────
+# Pipeline
+# ─────────────────────────────────────────────────────────────
 
 def process_single(
     pdf_path: Path,
     *,
     outdir: Path,
-    doc_type_hint: str = AUTO_CLASSIFY,
-    save_docai_json: bool = False,
     max_pages: int | None = None,
     config: Any,
     docai_client: Any,
     verbose: bool = False,
 ) -> dict[str, Any]:
     """
-    Run the full extraction pipeline on a single PDF.
+    Run the full extraction pipeline on a single PDF or image.
+
+    Steps
+    -----
+    1a. Pass 1 OCR with the Form Processor (generic OCR for all file types).
+    1b. Classify the document via keyword matching.
+    1c. Select the most accurate processor for the classified type.
+    1d. Pass 2 — re-parse with the specific processor if it differs from the
+        Form Processor (invoice → Invoice Parser, receipt → Receipt Parser).
+    2.  Normalise Document AI output and build enriched text.
+    3.  Gemini extraction using the type-specific prompt.
+    4.  Validate and normalise Gemini output.
+    5.  Write all artefacts to disk.
 
     Returns a summary dict with ``status``, ``doc_type``, ``output_dir``.
     """
@@ -140,128 +184,74 @@ def process_single(
 
     pdf_path = Path(pdf_path).resolve()
     source_file_str = str(pdf_path)
-    target_processor = config.docai_form_processor_name
+    form_processor = config.docai_form_processor_name
 
-    # ── Step 1: Document AI (OCR + optional re-parse) ─────────
-    if doc_type_hint and doc_type_hint != AUTO_CLASSIFY:
-        doc_type = doc_type_hint
-        target_processor = _processor_for_doc_type(doc_type, config)
+    # ── Step 1a: Pass 1 – Form Processor OCR ──────────────────
+    if verbose:
+        console.print(f"  [cyan]→[/] Pass 1 OCR on [bold]{pdf_path.name}[/] …")
+
+    document = _call_docai(pdf_path, form_processor, config, docai_client, max_pages)
+
+    if document is None:
+        elapsed = time.monotonic() - t_start
+        err_msg = "Document AI (Pass 1) failed. See console output above."
+        meta = build_meta(
+            source_file=source_file_str,
+            status="failed",
+            processor_name=form_processor,
+            gemini_model=config.gemini_model,
+            page_count=0,
+            elapsed_seconds=elapsed,
+            doc_type=DOC_TYPE_UNKNOWN,
+            error=err_msg,
+        )
+        write_all_artifacts(
+            pdf_path=pdf_path,
+            outdir=outdir,
+            raw_text="",
+            extraction_payload={
+                "source_file": source_file_str,
+                "doc_type": DOC_TYPE_UNKNOWN,
+                "extraction_method": "document_ai + gemini",
+                "extraction": {},
+                "confidence": {},
+                "warnings": [err_msg],
+                "created_at": meta["created_at"],
+            },
+            warnings=[err_msg],
+            meta=meta,
+        )
+        return {"status": "failed", "doc_type": DOC_TYPE_UNKNOWN, "output_dir": str(outdir / pdf_path.stem)}
+
+    # ── Step 1b: Classify via keyword matching ─────────────────
+    norm = normalize(document)
+    doc_type, scores = classify_doc_with_scores(norm.full_text)
+
+    if verbose:
+        console.print(f"  [cyan]→[/] Classified as [bold]{doc_type}[/] (scores={scores})")
+
+    if doc_type == DOC_TYPE_UNKNOWN:
+        warnings.append(
+            "Document type could not be confidently classified. "
+            "Extraction may be incomplete."
+        )
+
+    # ── Step 1c: Select specific processor ────────────────────
+    target_processor = _processor_for_doc_type(doc_type, config)
+
+    # ── Step 1d: Pass 2 – re-parse if a better processor exists
+    if target_processor != form_processor:
         if verbose:
-            console.print(f"  [cyan]→[/] Doc type forced: [bold]{doc_type}[/]")
-            console.print(f"  [cyan]→[/] Using processor: [bold]{target_processor}[/]")
+            console.print(f"  [cyan]→[/] Pass 2 re-parse with [bold]{target_processor}[/] …")
 
-        try:
-            document = process_pdf(
-                pdf_path=pdf_path,
-                config=config,
-                client=docai_client,
-                processor_name=target_processor,
-                max_pages=max_pages,
-            )
-        except Exception as exc:  # noqa: BLE001
-            elapsed = time.monotonic() - t_start
-            err_msg = str(exc)
-            console.print(f"  [red]✗[/] Document AI failed: {err_msg}")
-            meta = build_meta(
-                source_file=source_file_str,
-                status="failed",
-                processor_name=target_processor,
-                gemini_model=config.gemini_model,
-                page_count=0,
-                elapsed_seconds=elapsed,
-                doc_type="unknown",
-                error=err_msg,
-            )
-            write_all_artifacts(
-                pdf_path=pdf_path,
-                outdir=outdir,
-                raw_text="",
-                extraction_payload={
-                    "source_file": source_file_str,
-                    "doc_type": "unknown",
-                    "extraction_method": "document_ai + gemini",
-                    "extraction": {},
-                    "confidence": {},
-                    "warnings": [err_msg],
-                    "created_at": meta["created_at"],
-                },
-                warnings=[err_msg],
-                meta=meta,
-            )
-            return {"status": "failed", "doc_type": "unknown", "output_dir": str(outdir / pdf_path.stem)}
-    else:
-        initial_processor = config.docai_form_processor_name
-        if verbose:
-            console.print(f"  [cyan]→[/] Running Document AI OCR on [bold]{pdf_path.name}[/] …")
-
-        try:
-            document = process_pdf(
-                pdf_path=pdf_path,
-                config=config,
-                client=docai_client,
-                processor_name=initial_processor,
-                max_pages=max_pages,
-            )
-        except Exception as exc:  # noqa: BLE001
-            elapsed = time.monotonic() - t_start
-            err_msg = str(exc)
-            console.print(f"  [red]✗[/] Document AI failed: {err_msg}")
-            meta = build_meta(
-                source_file=source_file_str,
-                status="failed",
-                processor_name=initial_processor,
-                gemini_model=config.gemini_model,
-                page_count=0,
-                elapsed_seconds=elapsed,
-                doc_type="unknown",
-                error=err_msg,
-            )
-            write_all_artifacts(
-                pdf_path=pdf_path,
-                outdir=outdir,
-                raw_text="",
-                extraction_payload={
-                    "source_file": source_file_str,
-                    "doc_type": "unknown",
-                    "extraction_method": "document_ai + gemini",
-                    "extraction": {},
-                    "confidence": {},
-                    "warnings": [err_msg],
-                    "created_at": meta["created_at"],
-                },
-                warnings=[err_msg],
-                meta=meta,
-            )
-            return {"status": "failed", "doc_type": "unknown", "output_dir": str(outdir / pdf_path.stem)}
-
-        norm = normalize(document)
-        doc_type, scores = classify_doc_with_scores(norm.full_text)
-        if verbose:
-            console.print(f"  [cyan]→[/] Classified as [bold]{doc_type}[/] (scores={scores})")
-        if doc_type == DOC_TYPE_UNKNOWN:
+        reparse_doc = _call_docai(pdf_path, target_processor, config, docai_client, max_pages)
+        if reparse_doc is not None:
+            document = reparse_doc
+        else:
             warnings.append(
-                "Document type could not be confidently classified. "
-                "Extraction may be incomplete."
+                f"Pass 2 re-parse failed with processor '{target_processor}'. "
+                "Using Pass 1 OCR output."
             )
-
-        target_processor = _processor_for_doc_type(doc_type, config)
-        if target_processor != initial_processor:
-            if verbose:
-                console.print(f"  [cyan]→[/] Re-parsing with processor: [bold]{target_processor}[/]")
-            try:
-                document = process_pdf(
-                    pdf_path=pdf_path,
-                    config=config,
-                    client=docai_client,
-                    processor_name=target_processor,
-                    max_pages=max_pages,
-                )
-            except Exception as exc:  # noqa: BLE001
-                warn_msg = (
-                    f"Document AI re-parse failed with processor '{target_processor}': {exc}. "
-                    "Using initial OCR output."
-                )
-                warnings.append(warn_msg)
 
     # ── Step 2: Normalise Document AI output ──────────────────
     norm = normalize(document)
@@ -280,7 +270,7 @@ def process_single(
             f"Using '{extraction_doc_type}' extraction schema for doc_type '{doc_type}'."
         )
 
-    # ── Step 4: Gemini extraction ─────────────────────────────
+    # ── Step 3: Gemini extraction ──────────────────────────────
     extractor = _EXTRACTOR_MAP.get(extraction_doc_type)
     raw_extraction: dict[str, Any] = {}
 
@@ -293,13 +283,13 @@ def process_single(
             console.print(f"  [cyan]→[/] Running Gemini ({config.gemini_model}) …")
         raw_extraction = extractor(enriched_text, config=config, warnings=warnings)
 
-    # ── Step 5: Validate ──────────────────────────────────────
+    # ── Step 4: Validate ───────────────────────────────────────
     normalised, val_warnings, confidence = validate(extraction_doc_type, raw_extraction)
     warnings.extend(val_warnings)
 
     elapsed = time.monotonic() - t_start
 
-    # ── Step 6: Write artefacts ───────────────────────────────
+    # ── Step 5: Write artefacts ────────────────────────────────
     extraction_payload = build_extraction_payload(
         source_file=source_file_str,
         doc_type=doc_type,
@@ -319,7 +309,6 @@ def process_single(
         confidence_summary=confidence,
     )
 
-    # Always serialize docai for debugging
     docai_raw = _docai_to_serialisable(document)
 
     paths = write_all_artifacts(
@@ -374,8 +363,6 @@ def cmd_process(args: argparse.Namespace) -> int:
     result = process_single(
         pdf_path=pdf_path,
         outdir=outdir,
-        doc_type_hint=args.doc_type or AUTO_CLASSIFY,
-        save_docai_json=args.save_docai_json,
         max_pages=args.max_pages,
         config=config,
         docai_client=docai_client,
@@ -428,8 +415,6 @@ def cmd_batch(args: argparse.Namespace) -> int:
                 result = process_single(
                     pdf_path=pdf_path,
                     outdir=outdir,
-                    doc_type_hint=args.doc_type or AUTO_CLASSIFY,
-                    save_docai_json=args.save_docai_json,
                     max_pages=args.max_pages,
                     config=config,
                     docai_client=docai_client,
@@ -441,7 +426,7 @@ def cmd_batch(args: argparse.Namespace) -> int:
                     console.print(traceback.format_exc())
                 result = {
                     "status": "failed",
-                    "doc_type": "unknown",
+                    "doc_type": DOC_TYPE_UNKNOWN,
                     "output_dir": str(outdir / pdf_path.stem),
                     "warnings": 1,
                     "elapsed_seconds": 0.0,
@@ -496,21 +481,6 @@ def _build_shared_args(parser: argparse.ArgumentParser) -> None:
         default=True,
         dest="save_docai_json",
         help="Save raw Document AI response as docai.json (default: on)",
-    )
-    parser.add_argument(
-        "--doc-type",
-        choices=[
-            "invoice",
-            "receipt",
-            "delivery_receipt",
-            "utility_bill",
-            "utility",
-            "logistics",
-            "auto",
-        ],
-        default="auto",
-        dest="doc_type",
-        help="Force a document type (default: auto-classify)",
     )
     parser.add_argument(
         "--max-pages",

@@ -33,13 +33,21 @@ REQUIRED JSON STRUCTURE:
 {{
   "provider": string | null,
   "account_id": string | null,
+  "location": string | null,
+  "utility_type": "gas" | "water" | "electricity" | "other" | null,
   "billing_period_start": "YYYY-MM-DD" | null,
   "billing_period_end": "YYYY-MM-DD" | null,
   "electricity_kwh": number | null,
   "natural_gas_therms": number | null,
+  "water_volume": number | null,
+  "water_unit": string | null,
   "total_amount": number | null,
   "currency": "USD" | null
 }}
+
+- location: service or billing address as "City, State" (e.g. "Austin, TX"). Omit state if not present.
+- utility_type: one of "gas", "water", "electricity", or "other" based on what the bill is for.
+- For water bills: water_volume = usage amount (plain number); water_unit = unit from the document (e.g. gal, m³, ccf) or null.
 
 DOCUMENT TEXT:
 ---

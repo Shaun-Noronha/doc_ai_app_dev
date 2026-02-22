@@ -13,9 +13,18 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-# Load .env file from the directory that contains *this* file's parent (repo root).
-_REPO_ROOT = Path(__file__).resolve().parent.parent
-load_dotenv(_REPO_ROOT / ".env", override=False)
+# Package root: sme_doc_extract_local/
+_PACKAGE_ROOT = Path(__file__).resolve().parent.parent
+# Parent of package: doc_ai_app_dev/ (so .env can live at repo root)
+_PARENT_ROOT = _PACKAGE_ROOT.parent
+
+# Load .env from parent directory first, then package root (package overrides).
+_env_parent = _PARENT_ROOT / ".env"
+_env_package = _PACKAGE_ROOT / ".env"
+if _env_parent.exists():
+    load_dotenv(_env_parent)
+if _env_package.exists():
+    load_dotenv(_env_package, override=False)
 
 
 @dataclass
@@ -99,6 +108,17 @@ def get_config(gemini_model: str | None = None) -> Config:
 
     if gemini_model:
         cfg.gemini_model = gemini_model
+
+    # Resolve relative credentials path so it works regardless of cwd.
+    creds = cfg.google_application_credentials
+    if creds and not os.path.isabs(creds):
+        for base in (_PARENT_ROOT, _PACKAGE_ROOT):
+            resolved = (base / creds).resolve()
+            if resolved.exists():
+                cfg.google_application_credentials = str(resolved)
+                break
+        else:
+            cfg.google_application_credentials = str(_PARENT_ROOT / creds)
 
     # Point the Google auth library at the supplied key file.
     os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = cfg.google_application_credentials
