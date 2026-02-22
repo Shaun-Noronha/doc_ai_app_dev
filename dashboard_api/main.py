@@ -22,6 +22,7 @@ for _env_path in (_repo_root / ".env", _repo_root / "sme_doc_extract_local" / ".
         break
 
 from . import queries  # noqa: E402 – needs dotenv loaded first
+from . import recommendations as rec_engine  # noqa: E402
 
 app = FastAPI(
     title="SME Sustainability Pulse – Dashboard API",
@@ -102,13 +103,38 @@ def emissions_by_source():
 
 
 @app.get("/api/recommendations", summary="AI improvement recommendations")
-def recommendations():
+def api_recommendations():
     """
     Returns up to 10 recommendations from DB; falls back to 2 static items
     when the recommendations table is empty.
     """
     try:
         return queries.get_recommendations()
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.post("/recommendations/generate", summary="Run the recommendation engine")
+def generate_recommendations():
+    """
+    Evaluate every record against the 3 criteria (Better Closer Hauler,
+    Alternative Material, Change Shipment Method), rank by utility score,
+    and persist the top recommendations.
+    """
+    try:
+        return rec_engine.generate()
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.get("/recommendations", summary="Fetch scored recommendations")
+def get_recommendations(criteria: str | None = None):
+    """
+    Return persisted recommendations, optionally filtered by criteria
+    (better_closer_hauler, alternative_material, change_shipment_method).
+    """
+    try:
+        return rec_engine.fetch(criteria=criteria)
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 

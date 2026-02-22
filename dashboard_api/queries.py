@@ -229,20 +229,26 @@ def build_dashboard_payload(conn) -> dict:
         rec_rows = _cur_query(
             cur,
             """
-            SELECT r.recommendation_id AS id, r.recommendation_text AS description, a.activity_type AS category
+            SELECT r.recommendation_id AS id, r.recommendation_text AS description,
+                   a.activity_type AS category, r.criteria, r.saving_kg_co2e, r.score
             FROM recommendations r
             LEFT JOIN activities a ON a.activity_id = r.activity_id
-            ORDER BY r.recommendation_id LIMIT 10
+            ORDER BY r.score DESC NULLS LAST LIMIT 15
             """,
         )
         if rec_rows:
             recommendations = [
                 {
                     "id": row["id"],
-                    "title": (row.get("category") or "Recommendation").replace("_", " ").title(),
+                    "title": (row.get("criteria") or row.get("category") or "Recommendation").replace("_", " ").title(),
                     "description": row["description"],
-                    "priority": "medium",
-                    "category": row.get("category") or "general",
+                    "priority": (
+                        "high" if row.get("saving_kg_co2e") is not None and float(row["saving_kg_co2e"]) > 50
+                        else "medium" if row.get("saving_kg_co2e") is not None and float(row["saving_kg_co2e"]) > 10
+                        else "low"
+                    ),
+                    "category": row.get("criteria") or row.get("category") or "general",
+                    "potential_saving_tco2e": round(float(row["saving_kg_co2e"]) / 1000, 4) if row.get("saving_kg_co2e") else None,
                 }
                 for row in rec_rows
             ]
@@ -612,21 +618,27 @@ def _get_recommendations_live() -> list[dict]:
         """
         SELECT r.recommendation_id AS id,
                r.recommendation_text AS description,
-               a.activity_type AS category
+               a.activity_type AS category,
+               r.criteria, r.saving_kg_co2e, r.score
         FROM recommendations r
         LEFT JOIN activities a ON a.activity_id = r.activity_id
-        ORDER BY r.recommendation_id
-        LIMIT 10
+        ORDER BY r.score DESC NULLS LAST
+        LIMIT 15
         """
     )
     if rows:
         return [
             {
                 "id": row["id"],
-                "title": row.get("category", "Recommendation").replace("_", " ").title(),
+                "title": (row.get("criteria") or row.get("category") or "Recommendation").replace("_", " ").title(),
                 "description": row["description"],
-                "priority": "medium",
-                "category": row.get("category") or "general",
+                "priority": (
+                    "high" if row.get("saving_kg_co2e") is not None and float(row["saving_kg_co2e"]) > 50
+                    else "medium" if row.get("saving_kg_co2e") is not None and float(row["saving_kg_co2e"]) > 10
+                    else "low"
+                ),
+                "category": row.get("criteria") or row.get("category") or "general",
+                "potential_saving_tco2e": round(float(row["saving_kg_co2e"]) / 1000, 4) if row.get("saving_kg_co2e") else None,
             }
             for row in rows
         ]
