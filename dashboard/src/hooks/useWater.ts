@@ -31,5 +31,6 @@ export function useWater() {
     documents: data?.documents ?? [],
     loading,
     error,
+    retry: load,
   };
 }

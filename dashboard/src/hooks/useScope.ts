@@ -32,5 +32,6 @@ export function useScope(scope: 1 | 2 | 3) {
     documents: data?.documents ?? [],
     loading,
     error,
+    retry: load,
   };
 }

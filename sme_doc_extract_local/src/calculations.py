@@ -1096,7 +1096,7 @@ def run_all_calculations(
         # Collect kWh from DB for energy intensity (separate query)
         with conn.cursor() as cur:
             p: list[Any] = []
-            q = "SELECT COALESCE(SUM(kwh), 0) FROM electricity WHERE kwh IS NOT NULL"
+            q = "SELECT COALESCE(SUM(kwh), 0) FROM parsed_electricity WHERE kwh IS NOT NULL"
             if period_start:
                 q += " AND (period_start >= %s OR period_start IS NULL)"
                 p.append(period_start)

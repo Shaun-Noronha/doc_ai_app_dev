@@ -1,4 +1,4 @@
-import type { DashboardPayload, KpiData, ScopeEmission, SourceEmission, Recommendation, DocumentSource, ScopePayload, WaterPayload, UploadResult, ConfirmPayload } from './types';
+import type { DashboardPayload, KpiData, ScopeEmission, SourceEmission, Recommendation, DocumentSource, ScopePayload, WaterPayload, UploadResult, ConfirmPayload, Vendor } from './types';
 
 const BASE = '/api';
 
@@ -34,6 +34,21 @@ export const api = {
 
   /** Lightweight payload for Water view (water_usage, sparkline, documents). */
   waterPayload: () => get<WaterPayload>('/water'),
+
+  /** All vendors for the Vendors view. */
+  vendors: () => get<Vendor[]>('/vendors'),
+  /** Selected vendor IDs (for recommendations). */
+  vendorsSelected: () => get<string[]>('/vendors/selected'),
+  /** Set selected vendor IDs; returns the saved list. */
+  setVendorsSelected: async (vendorIds: string[]): Promise<string[]> => {
+    const res = await fetch(`${BASE}/vendors/selected`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ vendor_ids: vendorIds }),
+    });
+    if (!res.ok) throw new Error(`Failed to save vendors: ${res.status}`);
+    return res.json() as Promise<string[]>;
+  },
 
   /** Upload a document file to Doc AI + Gemini extraction. */
   upload: async (file: File): Promise<UploadResult> => {

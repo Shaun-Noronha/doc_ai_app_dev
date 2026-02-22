@@ -205,6 +205,65 @@ def _documents_by_scope_cur(cur, scope: int) -> list[dict]:
     return _documents_from_rows([dict(r) for r in cur.fetchall()])
 
 
+def _documents_by_scope_fallback_cur(cur, scope: int) -> list[dict]:
+    """
+    Get documents that contribute to this scope by querying parsed_* tables directly
+    (single query, no document_scope view). Same shape as _documents_by_scope_cur.
+    """
+    if scope not in (0, 1, 2, 3):
+        return []
+    if scope == 0:
+        sql = """
+            SELECT DISTINCT d.document_id, d.document_type, d.source_filename, d.created_at
+            FROM documents d
+            WHERE d.document_id IN (SELECT document_id FROM parsed_water)
+            ORDER BY d.created_at DESC
+            LIMIT 500
+        """
+    elif scope == 1:
+        sql = """
+            SELECT DISTINCT d.document_id, d.document_type, d.source_filename, d.created_at
+            FROM documents d
+            WHERE d.document_id IN (SELECT document_id FROM parsed_stationary_fuel)
+               OR d.document_id IN (SELECT document_id FROM parsed_vehicle_fuel)
+            ORDER BY d.created_at DESC
+            LIMIT 500
+        """
+    elif scope == 2:
+        sql = """
+            SELECT DISTINCT d.document_id, d.document_type, d.source_filename, d.created_at
+            FROM documents d
+            WHERE d.document_id IN (SELECT document_id FROM parsed_electricity)
+            ORDER BY d.created_at DESC
+            LIMIT 500
+        """
+    else:  # scope == 3
+        sql = """
+            SELECT DISTINCT d.document_id, d.document_type, d.source_filename, d.created_at
+            FROM documents d
+            WHERE d.document_id IN (SELECT document_id FROM parsed_shipping)
+               OR d.document_id IN (SELECT document_id FROM parsed_waste)
+            ORDER BY d.created_at DESC
+            LIMIT 500
+        """
+    cur.execute(sql)
+    return _documents_from_rows([dict(r) for r in cur.fetchall()])
+
+
+def _documents_by_scope_cur_safe(cur, scope: int) -> list[dict]:
+    """
+    Documents for this scope. Prefer direct parsed_* query (no view dependency);
+    if that fails, try document_scope view so Data Sources populates when data exists.
+    """
+    try:
+        return _documents_by_scope_fallback_cur(cur, scope)
+    except Exception:
+        try:
+            return _documents_by_scope_cur(cur, scope)
+        except Exception:
+            return []
+
+
 def build_dashboard_payload(conn) -> dict:
     """
     Build full dashboard payload (kpis, emissions_by_scope, emissions_by_source,
@@ -319,17 +378,29 @@ def build_dashboard_payload(conn) -> dict:
         ]
         emissions_by_source = sorted(sources, key=lambda x: x["tco2e"], reverse=True)
 
-        # Recommendations
-        rec_rows = _cur_query(
-            cur,
-            """
-            SELECT r.recommendation_id AS id, r.recommendation_text AS description,
-                   a.activity_type AS category, r.criteria, r.saving_kg_co2e, r.score
-            FROM recommendations r
-            LEFT JOIN activities a ON a.activity_id = r.activity_id
-            ORDER BY r.score DESC NULLS LAST LIMIT 15
-            """,
-        )
+        # Recommendations (full query if criteria/saving_kg_co2e/score exist; else minimal query for base schema)
+        try:
+            rec_rows = _cur_query(
+                cur,
+                """
+                SELECT r.recommendation_id AS id, r.recommendation_text AS description,
+                       a.activity_type AS category, r.criteria, r.saving_kg_co2e, r.score
+                FROM recommendations r
+                LEFT JOIN activities a ON a.activity_id = r.activity_id
+                ORDER BY r.score DESC NULLS LAST LIMIT 15
+                """,
+            )
+        except Exception:
+            rec_rows = _cur_query(
+                cur,
+                """
+                SELECT r.recommendation_id AS id, r.recommendation_text AS description,
+                       a.activity_type AS category
+                FROM recommendations r
+                LEFT JOIN activities a ON a.activity_id = r.activity_id
+                ORDER BY r.created_at DESC LIMIT 15
+                """,
+            )
         if rec_rows:
             recommendations = [
                 {
@@ -381,43 +452,49 @@ def get_scope_payload(scope: int) -> dict:
     """
     Lightweight payload for Scope 1, 2, or 3 view: scopeTotal, bySource, sparkline, documents.
     Uses 3-5 targeted queries instead of full dashboard build.
+    Returns empty/zero payload on DB errors (e.g. missing document_scope view or parsed_* tables).
     """
+    empty = {"scopeTotal": 0.0, "bySource": [], "sparkline": [], "documents": []}
     if scope not in (1, 2, 3):
-        return {"scopeTotal": 0.0, "bySource": [], "sparkline": [], "documents": []}
+        return empty
 
     def _build(conn):
-        with conn.cursor(cursor_factory=RealDictCursor) as cur:
-            if scope == 1:
-                stat_tco2e = float(_cur_scalar(cur, f"SELECT COALESCE(SUM({_stationary_case()}) / 1000, 0) FROM parsed_stationary_fuel") or 0)
-                veh_tco2e = float(_cur_scalar(cur, f"SELECT COALESCE(SUM({_vehicle_case()}) / 1000, 0) FROM parsed_vehicle_fuel") or 0)
-                scope_total = round(stat_tco2e + veh_tco2e, 4)
-                by_source = [
-                    {"source": "Stationary Fuel", "scope": 1, "tco2e": round(stat_tco2e, 4)},
-                    {"source": "Vehicle Fuel", "scope": 1, "tco2e": round(veh_tco2e, 4)},
-                ]
-                by_source = sorted(by_source, key=lambda x: x["tco2e"], reverse=True)
-            elif scope == 2:
-                elec_tco2e = float(_cur_scalar(cur, f"SELECT COALESCE(SUM(kwh * {ELECTRICITY_KG_PER_KWH}) / 1000, 0) FROM parsed_electricity") or 0)
-                scope_total = round(elec_tco2e, 4)
-                by_source = [{"source": "Electricity", "scope": 2, "tco2e": round(elec_tco2e, 4)}]
-            else:  # scope == 3
-                ship_tco2e = float(_cur_scalar(cur, f"SELECT COALESCE(SUM({_shipping_case()}) / 1000, 0) FROM parsed_shipping") or 0)
-                waste_tco2e = float(_cur_scalar(cur, f"SELECT COALESCE(SUM({_waste_case()}) / 1000, 0) FROM parsed_waste") or 0)
-                scope_total = round(ship_tco2e + waste_tco2e, 4)
-                by_source = [
-                    {"source": "Shipping", "scope": 3, "tco2e": round(ship_tco2e, 4)},
-                    {"source": "Waste", "scope": 3, "tco2e": round(waste_tco2e, 4)},
-                ]
-                by_source = sorted(by_source, key=lambda x: x["tco2e"], reverse=True)
+        try:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                if scope == 1:
+                    stat_tco2e = float(_cur_scalar(cur, f"SELECT COALESCE(SUM({_stationary_case()}) / 1000, 0) FROM parsed_stationary_fuel") or 0)
+                    veh_tco2e = float(_cur_scalar(cur, f"SELECT COALESCE(SUM({_vehicle_case()}) / 1000, 0) FROM parsed_vehicle_fuel") or 0)
+                    scope_total = round(stat_tco2e + veh_tco2e, 4)
+                    by_source = [
+                        {"source": "Stationary Fuel", "scope": 1, "tco2e": round(stat_tco2e, 4)},
+                        {"source": "Vehicle Fuel", "scope": 1, "tco2e": round(veh_tco2e, 4)},
+                    ]
+                    by_source = sorted(by_source, key=lambda x: x["tco2e"], reverse=True)
+                elif scope == 2:
+                    elec_tco2e = float(_cur_scalar(cur, f"SELECT COALESCE(SUM(kwh * {ELECTRICITY_KG_PER_KWH}) / 1000, 0) FROM parsed_electricity") or 0)
+                    scope_total = round(elec_tco2e, 4)
+                    by_source = [{"source": "Electricity", "scope": 2, "tco2e": round(elec_tco2e, 4)}]
+                else:  # scope == 3
+                    ship_tco2e = float(_cur_scalar(cur, f"SELECT COALESCE(SUM({_shipping_case()}) / 1000, 0) FROM parsed_shipping") or 0)
+                    waste_tco2e = float(_cur_scalar(cur, f"SELECT COALESCE(SUM({_waste_case()}) / 1000, 0) FROM parsed_waste") or 0)
+                    scope_total = round(ship_tco2e + waste_tco2e, 4)
+                    by_source = [
+                        {"source": "Shipping", "scope": 3, "tco2e": round(ship_tco2e, 4)},
+                        {"source": "Waste", "scope": 3, "tco2e": round(waste_tco2e, 4)},
+                    ]
+                    by_source = sorted(by_source, key=lambda x: x["tco2e"], reverse=True)
 
-            sparkline = _run_sparkline(cur)
-            documents = _documents_by_scope_cur(cur, scope)
-            return {
-                "scopeTotal": scope_total,
-                "bySource": by_source,
-                "sparkline": sparkline,
-                "documents": documents,
-            }
+                sparkline = _run_sparkline(cur)
+                documents = _documents_by_scope_cur_safe(cur, scope)
+                payload = {
+                    "scopeTotal": scope_total,
+                    "bySource": by_source,
+                    "sparkline": sparkline,
+                    "documents": documents,
+                }
+                return _make_json_serializable(payload)
+        except Exception:
+            return _make_json_serializable(empty)
 
     return db.with_connection(_build)
 
@@ -425,21 +502,31 @@ def get_scope_payload(scope: int) -> dict:
 def get_water_payload() -> dict:
     """
     Lightweight payload for Water view: water_usage, sparkline, documents.
-    Uses 3 queries only.
+    Uses 3 queries only. Returns empty/zero payload on DB errors.
     """
-    def _build(conn):
-        with conn.cursor(cursor_factory=RealDictCursor) as cur:
-            water_rows = _cur_query(cur, "SELECT water_volume, unit FROM parsed_water WHERE water_volume IS NOT NULL")
-            water_m3 = 0.0
-            for row in water_rows:
-                vol = float(row["water_volume"] or 0)
-                water_m3 += vol * GALLON_TO_M3 if row["unit"] == "gallon" else vol
-            water_volume_gallons = round(water_m3 * 264.172, 2) if water_m3 else 0.0
-            water_usage = {"volume_m3": round(water_m3, 4), "volume_gallons": water_volume_gallons}
+    empty = {
+        "water_usage": {"volume_m3": 0.0, "volume_gallons": 0.0},
+        "sparkline": [],
+        "documents": [],
+    }
 
-            sparkline = _run_sparkline(cur)
-            documents = _documents_by_scope_cur(cur, 0)
-            return {"water_usage": water_usage, "sparkline": sparkline, "documents": documents}
+    def _build(conn):
+        try:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                water_rows = _cur_query(cur, "SELECT water_volume, unit FROM parsed_water WHERE water_volume IS NOT NULL")
+                water_m3 = 0.0
+                for row in water_rows:
+                    vol = float(row["water_volume"] or 0)
+                    water_m3 += vol * GALLON_TO_M3 if row["unit"] == "gallon" else vol
+                water_volume_gallons = round(water_m3 * 264.172, 2) if water_m3 else 0.0
+                water_usage = {"volume_m3": round(water_m3, 4), "volume_gallons": water_volume_gallons}
+
+                sparkline = _run_sparkline(cur)
+                documents = _documents_by_scope_cur_safe(cur, 0)
+                payload = {"water_usage": water_usage, "sparkline": sparkline, "documents": documents}
+                return _make_json_serializable(payload)
+        except Exception:
+            return _make_json_serializable(empty)
 
     return db.with_connection(_build)
 
@@ -767,18 +854,31 @@ def get_recommendations() -> list[dict]:
 
 
 def _get_recommendations_live() -> list[dict]:
-    rows = db.query(
-        """
-        SELECT r.recommendation_id AS id,
-               r.recommendation_text AS description,
-               a.activity_type AS category,
-               r.criteria, r.saving_kg_co2e, r.score
-        FROM recommendations r
-        LEFT JOIN activities a ON a.activity_id = r.activity_id
-        ORDER BY r.score DESC NULLS LAST
-        LIMIT 15
-        """
-    )
+    try:
+        rows = db.query(
+            """
+            SELECT r.recommendation_id AS id,
+                   r.recommendation_text AS description,
+                   a.activity_type AS category,
+                   r.criteria, r.saving_kg_co2e, r.score
+            FROM recommendations r
+            LEFT JOIN activities a ON a.activity_id = r.activity_id
+            ORDER BY r.score DESC NULLS LAST
+            LIMIT 15
+            """
+        )
+    except Exception:
+        rows = db.query(
+            """
+            SELECT r.recommendation_id AS id,
+                   r.recommendation_text AS description,
+                   a.activity_type AS category
+            FROM recommendations r
+            LEFT JOIN activities a ON a.activity_id = r.activity_id
+            ORDER BY r.created_at DESC
+            LIMIT 15
+            """
+        )
     if rows:
         return [
             {

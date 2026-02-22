@@ -6,7 +6,7 @@ import DataSourcesList from '../components/DataSourcesList';
 import { useScope } from '../hooks/useScope';
 
 export default function Scope1View() {
-  const { scopeTotal, bySource, sparkline, documents, loading } = useScope(1);
+  const { scopeTotal, bySource, sparkline, documents, loading, error, retry } = useScope(1);
 
   return (
     <SectionLayout
@@ -14,6 +14,24 @@ export default function Scope1View() {
       subtitle="Direct emissions from stationary & vehicle fuel"
       icon={<Flame size={20} color="white" />}
     >
+      {error && (
+        <div className="flex items-center gap-3 p-4 rounded-xl border mb-4" style={{ background: 'rgba(254,226,226,0.5)', borderColor: 'var(--color-card-outline)' }}>
+          <p className="text-sm text-rose-700 flex-1" title={error}>{error}</p>
+          <button
+            type="button"
+            onClick={() => retry()}
+            className="text-sm font-semibold px-4 py-2 rounded-lg text-white shrink-0"
+            style={{ background: 'var(--chart-primary)' }}
+          >
+            Retry
+          </button>
+        </div>
+      )}
+      {!error && !loading && scopeTotal === 0 && documents.length === 0 && (
+        <p className="text-sm opacity-80 mb-4" style={{ color: 'var(--color-text)' }}>
+          No Scope 1 data yet. Add documents with stationary or vehicle fuel to see metrics here.
+        </p>
+      )}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <div className="rounded-2xl p-5 border" style={{ background: 'var(--color-card)', boxShadow: 'var(--shadow-card)', borderColor: 'var(--color-card-outline)' }}>
           <p className="text-xs font-semibold uppercase tracking-widest opacity-70" style={{ color: 'var(--color-text)' }}>Scope 1 total</p>
