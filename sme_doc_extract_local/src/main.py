@@ -516,6 +516,18 @@ def cmd_ingest(args: argparse.Namespace) -> int:
             "[dim]Note: Only utility_bill (electricity/gas/water) and delivery_receipt/shipping "
             "get a parsed_* row. Invoices/receipts and failed extractions are stored in documents only.[/]"
         )
+    # Refresh dashboard snapshot so the UI shows new data without recomputing on every request
+    if inserted > 0:
+        try:
+            # Ensure repo root is on path so dashboard_api can be imported
+            _repo_root = Path(__file__).resolve().parent.parent.parent
+            if str(_repo_root) not in sys.path:
+                sys.path.insert(0, str(_repo_root))
+            from dashboard_api import queries as dashboard_queries
+            dashboard_queries.refresh_snapshot()
+            console.print("[dim]Dashboard snapshot refreshed.[/]")
+        except Exception as e:  # noqa: BLE001
+            console.print(f"[yellow]Dashboard refresh skipped:[/] {e}")
     return 0 if failed == 0 else 1
 
 

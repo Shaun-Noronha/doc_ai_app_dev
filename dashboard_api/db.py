@@ -48,3 +48,15 @@ def scalar(sql: str, params: tuple = (), default=None):
             return row[0] if row else default
     finally:
         conn.close()
+
+
+def with_connection(callback):
+    """
+    Run callback(conn) with a single connection; connection is closed when done.
+    Use for refresh: run many queries over one connection.
+    """
+    conn = get_conn()
+    try:
+        return callback(conn)
+    finally:
+        conn.close()

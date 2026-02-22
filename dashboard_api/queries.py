@@ -4,8 +4,16 @@ the populated parsed_* tables by applying emission factors inline via SQL
 CASE expressions.
 
 All tCO2e values are computed as (quantity × factor_kg) / 1000.
+
+Refresh path: build_dashboard_payload(conn) runs all aggregations over one
+connection and returns the full payload; refresh_snapshot() writes it to
+dashboard_snapshot. Read path: get_dashboard() returns the cached payload.
 """
 from __future__ import annotations
+
+import json
+
+from psycopg2.extras import RealDictCursor
 
 from . import db
 from .emission_factors import (
@@ -75,17 +83,178 @@ def _waste_case() -> str:
     return "CASE " + " ".join(lines) + " END"
 
 
-# ─── public API ───────────────────────────────────────────────────────────
+def _cur_scalar(cur, sql: str, params: tuple = (), default=None):
+    cur.execute(sql, params)
+    row = cur.fetchone()
+    return row[0] if row else default
+
+
+def _cur_query(cur, sql: str, params: tuple = ()) -> list[dict]:
+    cur.execute(sql, params)
+    return [dict(row) for row in cur.fetchall()]
+
+
+def build_dashboard_payload(conn) -> dict:
+    """
+    Build full dashboard payload (kpis, emissions_by_scope, emissions_by_source,
+    recommendations) using a single connection. Used by refresh_snapshot().
+    """
+    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+        # Emission totals (compute once, reuse for kpis + scope + source)
+        elec_tco2e = float(
+            _cur_scalar(cur, f"SELECT COALESCE(SUM(kwh * {ELECTRICITY_KG_PER_KWH}) / 1000, 0) FROM parsed_electricity") or 0
+        )
+        stat_tco2e = float(
+            _cur_scalar(cur, f"SELECT COALESCE(SUM({_stationary_case()}) / 1000, 0) FROM parsed_stationary_fuel") or 0
+        )
+        veh_tco2e = float(
+            _cur_scalar(cur, f"SELECT COALESCE(SUM({_vehicle_case()}) / 1000, 0) FROM parsed_vehicle_fuel") or 0
+        )
+        ship_tco2e = float(
+            _cur_scalar(cur, f"SELECT COALESCE(SUM({_shipping_case()}) / 1000, 0) FROM parsed_shipping") or 0
+        )
+        waste_tco2e = float(
+            _cur_scalar(cur, f"SELECT COALESCE(SUM({_waste_case()}) / 1000, 0) FROM parsed_waste") or 0
+        )
+        total_tco2e = elec_tco2e + stat_tco2e + veh_tco2e + ship_tco2e + waste_tco2e
+
+        # Energy
+        energy_kwh = float(_cur_scalar(cur, "SELECT COALESCE(SUM(kwh), 0) FROM parsed_electricity") or 0)
+
+        # Water
+        water_rows = _cur_query(cur, "SELECT water_volume, unit FROM parsed_water WHERE water_volume IS NOT NULL")
+        water_m3 = 0.0
+        for row in water_rows:
+            vol = float(row["water_volume"] or 0)
+            water_m3 += vol * GALLON_TO_M3 if row["unit"] == "gallon" else vol
+
+        # Waste diversion
+        waste_rows = _cur_query(cur, "SELECT waste_weight, unit, disposal_method FROM parsed_waste")
+        total_waste_kg = 0.0
+        diverted_kg = 0.0
+        for row in waste_rows:
+            wt = float(row["waste_weight"] or 0)
+            kg = wt * LB_TO_KG if row["unit"] == "lb" else wt
+            total_waste_kg += kg
+            if row["disposal_method"] in ("recycle", "compost"):
+                diverted_kg += kg
+        diversion_rate = (diverted_kg / total_waste_kg * 100) if total_waste_kg > 0 else 0.0
+
+        # Sparkline
+        results = {}
+        for sql in [
+            f"SELECT to_char(period_start, 'YYYY-MM') AS period, SUM(kwh * {ELECTRICITY_KG_PER_KWH}) / 1000 AS tco2e FROM parsed_electricity WHERE period_start IS NOT NULL GROUP BY 1",
+            f"SELECT to_char(period_start, 'YYYY-MM') AS period, SUM({_stationary_case()}) / 1000 AS tco2e FROM parsed_stationary_fuel WHERE period_start IS NOT NULL GROUP BY 1",
+            f"SELECT to_char(period_start, 'YYYY-MM') AS period, SUM({_vehicle_case()}) / 1000 AS tco2e FROM parsed_vehicle_fuel WHERE period_start IS NOT NULL GROUP BY 1",
+            f"SELECT to_char(period_start, 'YYYY-MM') AS period, SUM({_shipping_case()}) / 1000 AS tco2e FROM parsed_shipping WHERE period_start IS NOT NULL GROUP BY 1",
+            f"SELECT to_char(period_start, 'YYYY-MM') AS period, SUM({_waste_case()}) / 1000 AS tco2e FROM parsed_waste WHERE period_start IS NOT NULL GROUP BY 1",
+        ]:
+            for row in _cur_query(cur, sql):
+                period = str(row.get("period") or "")
+                results[period] = results.get(period, 0.0) + float(row.get("tco2e") or 0)
+        sparkline = [{"period": k, "tco2e": round(v, 4)} for k, v in sorted(results.items()) if k]
+
+        kpis = {
+            "total_emissions_tco2e": round(total_tco2e, 2),
+            "energy_kwh": round(energy_kwh, 2),
+            "water_m3": round(water_m3, 2),
+            "waste_diversion_rate": round(diversion_rate, 1),
+            "sparkline": sparkline,
+        }
+
+        emissions_by_scope = [
+            {"scope": "Scope 1", "label": "Scope 1 (Direct)", "tco2e": round(stat_tco2e + veh_tco2e, 4)},
+            {"scope": "Scope 2", "label": "Scope 2 (Electricity)", "tco2e": round(elec_tco2e, 4)},
+            {"scope": "Scope 3", "label": "Scope 3 (Value Chain)", "tco2e": round(ship_tco2e + waste_tco2e, 4)},
+        ]
+
+        sources = [
+            {"source": "Electricity", "scope": 2, "tco2e": round(elec_tco2e, 4)},
+            {"source": "Stationary Fuel", "scope": 1, "tco2e": round(stat_tco2e, 4)},
+            {"source": "Vehicle Fuel", "scope": 1, "tco2e": round(veh_tco2e, 4)},
+            {"source": "Shipping", "scope": 3, "tco2e": round(ship_tco2e, 4)},
+            {"source": "Waste", "scope": 3, "tco2e": round(waste_tco2e, 4)},
+        ]
+        emissions_by_source = sorted(sources, key=lambda x: x["tco2e"], reverse=True)
+
+        # Recommendations
+        rec_rows = _cur_query(
+            cur,
+            """
+            SELECT r.recommendation_id AS id, r.recommendation_text AS description, a.activity_type AS category
+            FROM recommendations r
+            LEFT JOIN activities a ON a.activity_id = r.activity_id
+            ORDER BY r.recommendation_id LIMIT 10
+            """,
+        )
+        if rec_rows:
+            recommendations = [
+                {
+                    "id": row["id"],
+                    "title": (row.get("category") or "Recommendation").replace("_", " ").title(),
+                    "description": row["description"],
+                    "priority": "medium",
+                    "category": row.get("category") or "general",
+                }
+                for row in rec_rows
+            ]
+        else:
+            recommendations = _STATIC_RECOMMENDATIONS
+
+    return {
+        "kpis": kpis,
+        "emissions_by_scope": emissions_by_scope,
+        "emissions_by_source": emissions_by_source,
+        "recommendations": recommendations,
+    }
+
+
+def refresh_snapshot() -> None:
+    """Compute dashboard payload once and write to dashboard_snapshot (one connection)."""
+    def do_refresh(conn):
+        payload = build_dashboard_payload(conn)
+        with conn.cursor() as cur:
+            cur.execute(
+                "UPDATE dashboard_snapshot SET payload = %s::jsonb, refreshed_at = NOW() WHERE id = 1",
+                (json.dumps(payload),),
+            )
+        conn.commit()
+
+    db.with_connection(do_refresh)
+
+
+def get_dashboard() -> dict | None:
+    """
+    Return cached dashboard payload from dashboard_snapshot, or None if missing/empty.
+    One query, one connection.
+    """
+    rows = db.query(
+        "SELECT payload FROM dashboard_snapshot WHERE id = 1 AND payload != '{}'::jsonb"
+    )
+    if not rows:
+        return None
+    raw = rows[0].get("payload")
+    if raw is None:
+        return None
+    if isinstance(raw, dict):
+        return raw
+    return json.loads(raw) if isinstance(raw, str) else None
+
+
+# ─── public API (read from snapshot when available; else live for backward compat) ───
 
 def get_kpis() -> dict:
     """
-    Return top-level KPI values:
-      - total_emissions_tco2e
-      - energy_kwh (total electricity consumed)
-      - water_m3
-      - waste_diversion_rate (0-100 float)
-      - sparkline: list of {period, tco2e} for the Total Emissions card
+    Return top-level KPI values. Uses cached snapshot when available.
     """
+    cached = get_dashboard()
+    if cached and "kpis" in cached:
+        return cached["kpis"]
+    return _get_kpis_live()
+
+
+def _get_kpis_live() -> dict:
+    """Compute KPIs from parsed_* (used when snapshot empty or for refresh)."""
     # --- total emissions by source (tCO2e) ---
     elec_tco2e = db.scalar(
         f"SELECT COALESCE(SUM(kwh * {ELECTRICITY_KG_PER_KWH}) / 1000, 0) FROM parsed_electricity"
@@ -235,9 +404,15 @@ def _sparkline() -> list[dict]:
 
 def get_emissions_by_scope() -> list[dict]:
     """
-    Return tCO2e per GHG scope for the doughnut chart.
-    Scope 1 = stationary + vehicle; Scope 2 = electricity; Scope 3 = shipping + waste.
+    Return tCO2e per GHG scope for the doughnut chart. Uses cached snapshot when available.
     """
+    cached = get_dashboard()
+    if cached and "emissions_by_scope" in cached:
+        return cached["emissions_by_scope"]
+    return _get_emissions_by_scope_live()
+
+
+def _get_emissions_by_scope_live() -> list[dict]:
     stat_tco2e = float(
         db.scalar(
             f"SELECT COALESCE(SUM({_stationary_case()}) / 1000, 0) FROM parsed_stationary_fuel"
@@ -273,8 +448,15 @@ def get_emissions_by_scope() -> list[dict]:
 
 def get_emissions_by_source() -> list[dict]:
     """
-    Return tCO2e per emission source for the horizontal bar chart.
+    Return tCO2e per emission source for the horizontal bar chart. Uses cached snapshot when available.
     """
+    cached = get_dashboard()
+    if cached and "emissions_by_source" in cached:
+        return cached["emissions_by_source"]
+    return _get_emissions_by_source_live()
+
+
+def _get_emissions_by_source_live() -> list[dict]:
     elec = float(
         db.scalar(
             f"SELECT COALESCE(SUM(kwh * {ELECTRICITY_KG_PER_KWH}) / 1000, 0) FROM parsed_electricity"
@@ -333,9 +515,15 @@ _STATIC_RECOMMENDATIONS = [
 
 def get_recommendations() -> list[dict]:
     """
-    Return recommendations from DB if populated; otherwise fall back to the
-    static list of two items for the dashboard demo.
+    Return recommendations. Uses cached snapshot when available.
     """
+    cached = get_dashboard()
+    if cached and "recommendations" in cached:
+        return cached["recommendations"]
+    return _get_recommendations_live()
+
+
+def _get_recommendations_live() -> list[dict]:
     rows = db.query(
         """
         SELECT r.recommendation_id AS id,
