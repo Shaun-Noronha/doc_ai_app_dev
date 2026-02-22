@@ -585,19 +585,11 @@ def _get_emissions_by_source_live() -> list[dict]:
 
 _STATIC_RECOMMENDATIONS = [
     {
-        "id": 1,
-        "title": "Optimize Shipping Routes",
-        "description": "Consolidate freight shipments and switch to rail where available to reduce Scope 3 transport emissions by an estimated 15–20%.",
-        "priority": "high",
-        "category": "shipping",
-        "potential_saving_tco2e": None,
-    },
-    {
-        "id": 2,
-        "title": "Switch to LED Lighting",
-        "description": "Replacing existing lighting with LED fixtures across all facilities could reduce electricity consumption by up to 30%, lowering Scope 2 emissions.",
-        "priority": "medium",
-        "category": "electricity",
+        "id": 0,
+        "title": "No Data Found",
+        "description": "No sustainability data available to generate recommendations. Ingest documents to populate the database, then run the recommendation engine.",
+        "priority": "low",
+        "category": "general",
         "potential_saving_tco2e": None,
     },
 ]
