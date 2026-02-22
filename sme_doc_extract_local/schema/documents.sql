@@ -189,6 +189,21 @@ CREATE TABLE IF NOT EXISTS waste_metrics (
 
 CREATE INDEX IF NOT EXISTS idx_waste_metrics_period ON waste_metrics(period_start, period_end);
 
+-- vendors – supplier registry used for sustainability recommendations
+CREATE TABLE IF NOT EXISTS vendors (
+  vendor_id              VARCHAR(20)  PRIMARY KEY,   -- e.g. V001
+  vendor_name            VARCHAR(100) NOT NULL,
+  category               VARCHAR(50)  NOT NULL,      -- Packaging, Logistics, Energy Provider, etc.
+  product_or_service     VARCHAR(150) NOT NULL,
+  carbon_intensity       NUMERIC(10,4) NOT NULL CHECK (carbon_intensity >= 0),  -- kg CO2e per unit
+  sustainability_score   SMALLINT NOT NULL CHECK (sustainability_score BETWEEN 0 AND 100),
+  distance_km_from_sme   NUMERIC(10,2) CHECK (distance_km_from_sme >= 0),
+  created_at             TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_vendors_category ON vendors(category);
+CREATE INDEX IF NOT EXISTS idx_vendors_sustainability_score ON vendors(sustainability_score DESC);
+
 -- recommendations – free-text suggestions linked to activities
 CREATE TABLE IF NOT EXISTS recommendations (
   recommendation_id   BIGSERIAL PRIMARY KEY,
