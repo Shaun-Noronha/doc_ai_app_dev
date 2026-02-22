@@ -31,6 +31,13 @@ import traceback
 from pathlib import Path
 from typing import Any
 
+# Ensure package root (sme_doc_extract_local) is on path so "from src.*" works
+# when run as either "python -m src.main" (from sme_doc_extract_local) or
+# "python -m sme_doc_extract_local.src.main" (from doc_ai_app_dev).
+_pkg_root = Path(__file__).resolve().parent.parent
+if str(_pkg_root) not in sys.path:
+    sys.path.insert(0, str(_pkg_root))
+
 from rich.console import Console
 from rich.panel import Panel
 from rich.progress import Progress, SpinnerColumn, TextColumn

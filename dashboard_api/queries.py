@@ -12,6 +12,7 @@ dashboard_snapshot. Read path: get_dashboard() returns the cached payload.
 from __future__ import annotations
 
 import json
+from decimal import Decimal
 
 from psycopg2.extras import RealDictCursor
 
@@ -86,7 +87,12 @@ def _waste_case() -> str:
 def _cur_scalar(cur, sql: str, params: tuple = (), default=None):
     cur.execute(sql, params)
     row = cur.fetchone()
-    return row[0] if row else default
+    if row is None:
+        return default
+    # RealDictCursor returns dict-like rows; use first value
+    if hasattr(row, "values"):
+        return next(iter(row.values()))
+    return row[0]
 
 
 def _cur_query(cur, sql: str, params: tuple = ()) -> list[dict]:
@@ -215,7 +221,11 @@ def refresh_snapshot() -> None:
         payload = build_dashboard_payload(conn)
         with conn.cursor() as cur:
             cur.execute(
-                "UPDATE dashboard_snapshot SET payload = %s::jsonb, refreshed_at = NOW() WHERE id = 1",
+                """
+                INSERT INTO dashboard_snapshot (id, payload, refreshed_at)
+                VALUES (1, %s::jsonb, NOW())
+                ON CONFLICT (id) DO UPDATE SET payload = EXCLUDED.payload, refreshed_at = NOW()
+                """,
                 (json.dumps(payload),),
             )
         conn.commit()
@@ -223,22 +233,42 @@ def refresh_snapshot() -> None:
     db.with_connection(do_refresh)
 
 
+def _make_json_serializable(obj):
+    """Recursively convert Decimal and other non-JSON types so FastAPI can serialize."""
+    if isinstance(obj, Decimal):
+        return float(obj)
+    if isinstance(obj, dict):
+        return {k: _make_json_serializable(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_make_json_serializable(v) for v in obj]
+    return obj
+
+
 def get_dashboard() -> dict | None:
     """
     Return cached dashboard payload from dashboard_snapshot, or None if missing/empty.
-    One query, one connection.
+    One query, one connection. Returns None if table does not exist (schema not applied).
     """
-    rows = db.query(
-        "SELECT payload FROM dashboard_snapshot WHERE id = 1 AND payload != '{}'::jsonb"
-    )
+    try:
+        rows = db.query(
+            "SELECT payload FROM dashboard_snapshot WHERE id = 1 AND payload != '{}'::jsonb"
+        )
+    except Exception:
+        # e.g. relation "dashboard_snapshot" does not exist
+        return None
     if not rows:
         return None
     raw = rows[0].get("payload")
     if raw is None:
         return None
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw)
+        except (TypeError, ValueError):
+            return None
     if isinstance(raw, dict):
-        return raw
-    return json.loads(raw) if isinstance(raw, str) else None
+        return _make_json_serializable(raw)
+    return None
 
 
 # ─── public API (read from snapshot when available; else live for backward compat) ───

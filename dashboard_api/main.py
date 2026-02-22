@@ -49,7 +49,10 @@ def dashboard():
         if payload is None:
             raise HTTPException(
                 status_code=503,
-                detail="Dashboard not yet built. Run POST /api/refresh or ingest documents first.",
+                detail=(
+                    "Dashboard not yet built. Apply schema (documents.sql includes dashboard_snapshot table), "
+                    "then run POST /api/refresh or ingest documents."
+                ),
             )
         return payload
     except HTTPException:
