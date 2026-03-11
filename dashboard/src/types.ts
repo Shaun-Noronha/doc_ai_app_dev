@@ -70,6 +70,37 @@ export interface DashboardMetrics {
   water_usage: WaterUsageMetrics;
 }
 
+/** Sparkline point (monthly tCO₂e) */
+export interface SparklinePoint {
+  period: string;
+  tco2e: number;
+}
+
+/** Lightweight payload from GET /api/scope/1|2|3 */
+export interface ScopePayload {
+  scopeTotal: number;
+  bySource: SourceEmission[];
+  sparkline: SparklinePoint[];
+  documents: DocumentSource[];
+}
+
+/** Lightweight payload from GET /api/water */
+export interface WaterPayload {
+  water_usage: WaterUsageMetrics;
+  sparkline: SparklinePoint[];
+  documents: DocumentSource[];
+}
+
+export interface Vendor {
+  vendor_id: string;
+  vendor_name: string;
+  category: string;
+  product_or_service: string;
+  carbon_intensity: number;
+  sustainability_score: number;
+  distance_km_from_sme: number | null;
+}
+
 /** Full dashboard payload from GET /api/dashboard */
 export interface DashboardPayload {
   kpis: KpiData;

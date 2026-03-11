@@ -14,17 +14,13 @@ Pipeline
 5. MMR diversity rerank with cosine similarity to remove near-duplicates.
 6. Persist top-N per criterion; refresh dashboard snapshot.
 
-Five criteria
-------------
-1. Better Closer Hauler   – match shipping records to closer Logistics vendors.
+Three criteria
+--------------
+1. Better Closer Hauler  – match shipping records to closer Logistics vendors.
 2. Alternative Material   – within each vendor category, recommend greener
                             vendor over the high-carbon one (cosine similarity
                             on vendor profiles to find the best substitute).
 3. Change Shipment Method – recommend switching transport mode for shipping.
-4. Reduce Fuel Emissions  – vehicle: diesel→gasoline; stationary: heating_oil→propane;
-                            match to Energy vendors for supplier scoring.
-5. Green Electricity      – match electricity consumption to Energy vendors
-                            with carbon intensity below US grid average.
 """
 from __future__ import annotations
 
@@ -38,11 +34,7 @@ from psycopg2.extras import RealDictCursor
 
 from . import db
 from . import queries
-from .emission_factors import (
-    VEHICLE_FUEL_KG,
-    STATIONARY_FUEL_KG,
-    ELECTRICITY_KG_PER_KWH as GRID_KG_PER_KWH,
-)
+from .emission_factors import VEHICLE_FUEL_KG, STATIONARY_FUEL_KG
 
 logger = logging.getLogger(__name__)
 
@@ -307,13 +299,15 @@ def _candidates_change_mode(ship_groups):
 
 # ═════════════════════════════════════════════════════════════════════════════
 # CRITERION 4 — Reduce Fuel Emissions
-# For vehicle fuel: diesel → gasoline. For stationary: heating_oil → propane.
+# For vehicle fuel records using diesel, recommend switching to gasoline.
+# For stationary fuel using heating_oil, recommend switching to propane.
 # Match against Energy vendors for supplier scoring via cosine similarity.
 # ═════════════════════════════════════════════════════════════════════════════
 
 _VEHICLE_SWITCH: dict[str, tuple[str, str]] = {
     "diesel": ("gasoline", "gallon"),
 }
+
 _STATIONARY_SWITCH: dict[str, tuple[str, str]] = {
     "heating_oil": ("propane", "gallon"),
 }
@@ -346,9 +340,8 @@ def _candidates_reduce_fuel(veh_groups, stat_groups, energy_vendors):
         for v in energy_vendors:
             v_score = _f(v, "sustainability_score")
             rec_vec = np.array([[qty, current_kg, saving]])
-            ven_vec = np.array([
-                [1.0 / max(_f(v, "carbon_intensity"), 0.01), v_score, 1.0 / max(_f(v, "distance_km_from_sme"), 1)]
-            ])
+            ven_vec = np.array([[1.0 / max(_f(v, "carbon_intensity"), 0.01), v_score,
+                                 1.0 / max(_f(v, "distance_km_from_sme"), 1)]])
             sim = float(cos_sim(rec_vec, ven_vec)[0, 0])
             sc = saving * n * (v_score / 100) * (1 + sim) / 2
             if sc > best_sc:
@@ -377,7 +370,7 @@ def _candidates_reduce_fuel(veh_groups, stat_groups, energy_vendors):
             "text": (
                 f"{n} record{'s' if n > 1 else ''}: {qty:.1f} {unit} {fuel} "
                 f"({current_kg:.1f} kg CO₂e each). "
-                f"Switch to {alt_fuel} — cuts {pct:.0f}%, "
+                f"Switch to {alt_fuel} -- cuts {pct:.0f}%, "
                 f"saves {saving:.1f} kg/record, "
                 f"{saving * n:.1f} kg total.{vendor_note}"
             ),
@@ -386,7 +379,7 @@ def _candidates_reduce_fuel(veh_groups, stat_groups, energy_vendors):
     for group in stat_groups:
         rep = group[0]
         fuel = (rep.get("fuel_type") or "").lower()
-        unit = (rep.get("unit") or "therm").lower()
+        unit = (rep.get("unit") or "gallon").lower()
         qty = _f(rep, "quantity")
         if qty <= 0 or fuel not in _STATIONARY_SWITCH:
             continue
@@ -418,7 +411,7 @@ def _candidates_reduce_fuel(veh_groups, stat_groups, energy_vendors):
             "text": (
                 f"{n} record{'s' if n > 1 else ''}: {qty:.1f} {unit} {fuel} "
                 f"({current_kg:.1f} kg CO₂e each). "
-                f"Switch to {alt_fuel} — cuts {pct:.0f}%, "
+                f"Switch to {alt_fuel} -- cuts {pct:.0f}%, "
                 f"saves {saving:.1f} kg/record, "
                 f"{saving * n:.1f} kg total."
             ),
@@ -429,13 +422,15 @@ def _candidates_reduce_fuel(veh_groups, stat_groups, energy_vendors):
 
 # ═════════════════════════════════════════════════════════════════════════════
 # CRITERION 5 — Green Electricity Provider
-# Match total electricity consumption to Energy vendors with carbon intensity
-# below US grid average. Cosine similarity on [kWh, current_emissions, grid_factor]
-# vs [1/vendor_ci, score, 1/distance].
+# Match total electricity consumption against Energy vendors whose carbon
+# intensity is below the US average grid factor.  Cosine similarity on
+# [kWh, current_emissions, grid_factor] vs [1/vendor_ci, score, 1/distance].
 # ═════════════════════════════════════════════════════════════════════════════
 
+_GRID_KG_PER_KWH = 0.3862
 
-def _candidates_green_electricity(elec_records, energy_vendors, fallback_activity_id=None):
+
+def _candidates_green_electricity(elec_records, energy_vendors):
     candidates = []
     if not elec_records or not energy_vendors:
         return candidates
@@ -444,15 +439,16 @@ def _candidates_green_electricity(elec_records, energy_vendors, fallback_activit
     if total_kwh <= 0:
         return candidates
 
-    current_kg = total_kwh * GRID_KG_PER_KWH
+    current_kg = total_kwh * _GRID_KG_PER_KWH
     n = len(elec_records)
 
-    rep_aid = fallback_activity_id
+    rep_aid = None
     rep_pid = elec_records[0]["parsed_id"]
     for r in elec_records:
         if r.get("activity_id"):
             rep_aid = r["activity_id"]
             break
+
     if not rep_aid:
         return candidates
 
@@ -461,7 +457,7 @@ def _candidates_green_electricity(elec_records, energy_vendors, fallback_activit
         v_score = _f(v, "sustainability_score")
         v_name = v["vendor_name"]
 
-        if v_ci >= GRID_KG_PER_KWH:
+        if v_ci >= _GRID_KG_PER_KWH:
             continue
 
         new_kg = total_kwh * v_ci
@@ -471,10 +467,9 @@ def _candidates_green_electricity(elec_records, energy_vendors, fallback_activit
 
         pct = saving / current_kg * 100
 
-        rec_vec = np.array([[total_kwh, current_kg, GRID_KG_PER_KWH]])
-        ven_vec = np.array([
-            [1.0 / max(v_ci, 0.001), v_score, 1.0 / max(_f(v, "distance_km_from_sme"), 1)]
-        ])
+        rec_vec = np.array([[total_kwh, current_kg, _GRID_KG_PER_KWH]])
+        ven_vec = np.array([[1.0 / max(v_ci, 0.001), v_score,
+                             1.0 / max(_f(v, "distance_km_from_sme"), 1)]])
         sim = float(cos_sim(rec_vec, ven_vec)[0, 0])
 
         candidates.append({
@@ -491,7 +486,7 @@ def _candidates_green_electricity(elec_records, energy_vendors, fallback_activit
             "feature_vec": [total_kwh, current_kg, saving, v_score],
             "text": (
                 f"Switch {total_kwh:,.0f} kWh ({n} bill{'s' if n > 1 else ''}) "
-                f"from grid ({GRID_KG_PER_KWH} kg/kWh) to \"{v_name}\" "
+                f"from grid ({_GRID_KG_PER_KWH} kg/kWh) to \"{v_name}\" "
                 f"({v_ci:.4f} kg/kWh, sustainability {int(v_score)}/100). "
                 f"Saves {saving:.1f} kg CO₂e ({pct:.0f}% reduction)."
             ),
@@ -620,7 +615,7 @@ def generate(top_n: int = 3) -> dict[str, Any]:
         c2 = _candidates_alt_material(vendors, fallback_aid)
         c3 = _candidates_change_mode(ship_groups)
         c4 = _candidates_reduce_fuel(veh_groups, stat_groups, energy_v)
-        c5 = _candidates_green_electricity(electricity, energy_v, fallback_aid)
+        c5 = _candidates_green_electricity(electricity, energy_v)
 
         all_cands = c1 + c2 + c3 + c4 + c5
         logger.info(
@@ -630,7 +625,7 @@ def generate(top_n: int = 3) -> dict[str, Any]:
 
         _normalise(all_cands)
 
-        # Apply MMR per-criterion so all criteria are represented,
+        # Apply MMR per-criterion to guarantee all 3 are represented,
         # while still removing near-duplicates within the same type.
         by_crit: dict[str, list[dict]] = {}
         for c in all_cands:
@@ -670,13 +665,7 @@ def generate(top_n: int = 3) -> dict[str, Any]:
         return {
             "vendors_used": len(vendors),
             "shipping_groups": len(ship_groups),
-            "candidates": {
-                "hauler": len(c1),
-                "material": len(c2),
-                "mode": len(c3),
-                "fuel": len(c4),
-                "electricity": len(c5),
-            },
+            "candidates": {"hauler": len(c1), "material": len(c2), "mode": len(c3), "fuel": len(c4), "electricity": len(c5)},
             "after_diversity": len(selected),
             "saved": len(selected),
             "total_saving_kg": round(total_saving, 2),

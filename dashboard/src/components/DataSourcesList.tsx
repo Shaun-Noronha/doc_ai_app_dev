@@ -4,6 +4,8 @@ import type { DocumentSource } from '../types';
 interface Props {
   documents: DocumentSource[];
   loading?: boolean;
+  title?: string;
+  subtitle?: string;
 }
 
 function formatDate(iso: string) {
@@ -19,7 +21,7 @@ function formatType(type: string) {
   return type.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
-export default function DataSourcesList({ documents, loading }: Props) {
+export default function DataSourcesList({ documents, loading, title = 'Data sources', subtitle = 'Documents used for metrics' }: Props) {
   return (
     <div className="rounded-2xl p-5 flex flex-col h-full" style={{ background: 'var(--color-card)', boxShadow: 'var(--shadow-card)' }}>
       <div className="flex items-center gap-2 mb-4">
@@ -28,10 +30,10 @@ export default function DataSourcesList({ documents, loading }: Props) {
         </div>
         <div>
           <h3 className="text-sm font-bold uppercase tracking-widest opacity-80" style={{ color: 'var(--color-text)' }}>
-            Data sources
+            {title}
           </h3>
           <p className="text-xs opacity-70" style={{ color: 'var(--color-text)' }}>
-            Documents used for metrics
+            {subtitle}
           </p>
         </div>
       </div>

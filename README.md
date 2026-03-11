@@ -83,10 +83,12 @@ doc_ai_app_dev/
 |   |   +-- README.md            # Schema documentation
 |   |-- samples/                 # Sample input documents
 |   |-- out/                     # Extraction output directory
-|   |-- run_calculations.py      # Standalone calculation runner
-|   |-- seed_vendors.py          # Vendor knowledge base seeder
-|   |-- seed_synthetic_data.py   # Synthetic test data generator
-|   |-- tests/                   # Unit tests
+|   |-- service.py              # Upload/confirm callables used by FastAPI (no Flask)
+|   |-- app.py                  # Stub; directs users to run FastAPI backend
+|   |-- run_calculations.py     # Standalone calculation runner
+|   |-- seed_vendors.py         # Vendor knowledge base seeder
+|   |-- seed_synthetic_data.py  # Synthetic test data generator
+|   |-- tests/                  # Unit tests
 |   +-- requirements.txt
 |
 |-- dashboard_api/               # FastAPI backend for the dashboard
@@ -220,7 +222,9 @@ cd sme_doc_extract_local
 python run_calculations.py
 ```
 
-### Start the dashboard API (port 8000)
+### Start the backend (single FastAPI server, port 8000)
+
+One server serves all API routes. Upload and confirm (Add Document) run in-process via `sme_doc_extract_local.service`; no separate Doc AI server is needed. For Add Document to work, install both `dashboard_api` and `sme_doc_extract_local` dependencies (see Setup).
 
 ```bash
 # From the project root
@@ -345,6 +349,14 @@ single placeholder card indicating that no data was found.
 | GET    | /api/emissions-by-scope | Emissions split by Scope 1/2/3         |
 | GET    | /api/emissions-by-source| Emissions split by source category     |
 | GET    | /api/recommendations    | AI recommendations (from snapshot)     |
+| GET    | /api/documents          | Documents that contributed data (?scope=0\|1\|2\|3 optional) |
+| GET    | /api/scope/{1\|2\|3}    | Scope-specific payload (scopeTotal, bySource, sparkline, documents) |
+| GET    | /api/water              | Water view payload (water_usage, sparkline, documents) |
+| GET    | /api/vendors            | All vendors                            |
+| GET    | /api/vendors/selected   | Selected vendor IDs                    |
+| POST   | /api/vendors/selected   | Set selected vendor IDs (body: { vendor_ids: string[] }) |
+| POST   | /api/upload             | Upload document for Doc AI + Gemini extraction (in-process) |
+| POST   | /api/confirm            | Confirm extracted fields, save to DB, return dashboard (in-process) |
 | GET    | /health                 | Health check                           |
 
 ### Recommendation endpoints
