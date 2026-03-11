@@ -16,6 +16,12 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
+if os.getenv("GOOGLE_CREDENTIALS_JSON"):
+    creds_path = "/tmp/google-creds.json"
+    with open(creds_path, "w") as f:
+        f.write(os.getenv("GOOGLE_CREDENTIALS_JSON"))
+    os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = creds_path
+
 logger = logging.getLogger(__name__)
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
