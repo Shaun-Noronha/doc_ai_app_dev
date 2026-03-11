@@ -14,6 +14,19 @@ import logging
 import os
 from pathlib import Path
 
+from fastapi.middleware.cors import CORSMiddleware
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:3000",
+        "https://your-vercel-app.vercel.app",
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 from dotenv import load_dotenv
 
 if os.getenv("GOOGLE_CREDENTIALS_JSON"):

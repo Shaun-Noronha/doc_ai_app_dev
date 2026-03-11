@@ -19,7 +19,7 @@ function SkeletonCard() {
 }
 
 export default function Dashboard() {
-  const { kpis, byScope, bySource, recommendations, loading, error, retry } = useDashboard();
+  const { kpis, byScope, recommendations, loading, error, retry } = useDashboard();
   const [showUpload, setShowUpload] = useState(false);
 
   const today = new Date().toLocaleDateString('en-US', {
